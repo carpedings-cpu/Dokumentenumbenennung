@@ -35,20 +35,26 @@ ANALYSIERBAR = LESBARE_TEXT_ENDUNGEN | {".png", ".jpg", ".jpeg", ".gif", ".webp"
 
 def lade_va_regeln():
     """Laedt den VA-Text aus der SKILL.md (Single Source of Truth) als Systemprompt."""
-    pfad = os.path.join(_HIER, "..", ".claude", "skills",
-                        "dokumentenumbenennung", "SKILL.md")
-    try:
-        with open(pfad, "r", encoding="utf-8") as f:
-            txt = f.read()
-        # Frontmatter (--- ... ---) entfernen
-        if txt.startswith("---"):
-            teile = txt.split("---", 2)
-            if len(teile) == 3:
-                txt = teile[2]
-        return txt.strip()
-    except OSError:
-        return ("Verfahrensanweisung KPC Dokumentenbenennung 1.1. Schema: "
-                "JJMMTT_[Quelle]_[Phase]_Dokumententyp_Bezeichnung[_Version].")
+    kandidaten = []
+    # In einer PyInstaller-.exe liegt die SKILL.md gebuendelt in sys._MEIPASS.
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        kandidaten.append(os.path.join(meipass, "SKILL.md"))
+    kandidaten.append(os.path.join(_HIER, "..", ".claude", "skills",
+                                   "dokumentenumbenennung", "SKILL.md"))
+    for pfad in kandidaten:
+        try:
+            with open(pfad, "r", encoding="utf-8") as f:
+                txt = f.read()
+            if txt.startswith("---"):
+                teile = txt.split("---", 2)
+                if len(teile) == 3:
+                    txt = teile[2]
+            return txt.strip()
+        except OSError:
+            continue
+    return ("Verfahrensanweisung KPC Dokumentenbenennung 1.1. Schema: "
+            "JJMMTT_[Quelle]_[Phase]_Dokumententyp_Bezeichnung[_Version].")
 
 
 class App:

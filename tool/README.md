@@ -50,6 +50,28 @@ export ANTHROPIC_API_KEY="sk-ant-…"     # Windows: setx ANTHROPIC_API_KEY "sk-
 Der API-Modus nutzt das Modell `claude-opus-4-8` und schickt das PDF direkt zur
 Analyse (kostenpflichtig pro Dokument).
 
+## Als Windows-`.exe` (ohne Python)
+
+Damit das Programm ganz ohne Python-Installation läuft, kann es zu einer
+einzelnen `.exe` gebündelt werden. Zwei Wege:
+
+### A) Automatisch über GitHub (kein Windows-Rechner nötig)
+1. Im Repo auf den Reiter **Actions** gehen.
+2. Links **„Windows-EXE bauen"** wählen → rechts **„Run workflow"**.
+3. Nach ein paar Minuten unten beim Lauf unter **Artifacts** die
+   `Dokumenten-Umbenenner-Windows` herunterladen → entpacken → `.exe` starten.
+
+Alternativ: einen Versions-Tag setzen (z. B. `v1.0`) – dann wird automatisch ein
+**Release** mit der `.exe` zum Download erstellt.
+
+### B) Lokal auf einem Windows-Rechner
+Mit installiertem Python: Doppelklick auf [`build_windows.bat`](build_windows.bat)
+(oder im Repo-Stammverzeichnis `pyinstaller --noconfirm dokumenten-umbenenner.spec`).
+Die fertige Datei liegt danach unter `dist/Dokumenten-Umbenenner.exe`.
+
+Die `.exe` enthält **beide Modi** – offline funktioniert sofort, der API-Modus
+braucht zusätzlich einen Schlüssel im Programm.
+
 ## Dateien
 
 | Datei | Zweck |

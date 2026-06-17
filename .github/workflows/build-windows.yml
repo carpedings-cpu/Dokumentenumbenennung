@@ -1,0 +1,46 @@
+name: Windows-EXE bauen
+
+# Baut die Desktop-App als eigenstaendige Windows-.exe.
+# - Manuell ausloesbar ueber den Reiter "Actions" -> "Run workflow".
+# - Bei einem Versions-Tag (z. B. v1.0) wird zusaetzlich ein Release mit der
+#   .exe als Download angehaengt.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Abhaengigkeiten installieren
+        run: pip install pyinstaller anthropic
+
+      - name: EXE bauen
+        run: pyinstaller --noconfirm dokumenten-umbenenner.spec
+
+      - name: EXE als Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dokumenten-Umbenenner-Windows
+          path: dist/Dokumenten-Umbenenner.exe
+          if-no-files-found: error
+
+      - name: Release anlegen (nur bei Versions-Tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Dokumenten-Umbenenner.exe
