@@ -24,6 +24,15 @@ try:
 except Exception:
     pass
 
+# tkinterdnd2 (Drag & Drop) inkl. der tkdnd-Bibliotheksdateien mitbuendeln.
+try:
+    d_datas, d_binaries, d_hidden = collect_all("tkinterdnd2")
+    datas += d_datas
+    binaries += d_binaries
+    hiddenimports += d_hidden
+except Exception:
+    pass
+
 a = Analysis(
     [os.path.join("tool", "dokumenten_umbenenner.py")],
     pathex=["tool"],

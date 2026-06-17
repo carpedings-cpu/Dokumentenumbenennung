@@ -9,8 +9,8 @@ REM ===================================================================
 cd /d "%~dp0\.."
 
 echo.
-echo [1/2] Installiere PyInstaller und anthropic ...
-python -m pip install --upgrade pyinstaller anthropic || goto :fehler
+echo [1/2] Installiere PyInstaller, anthropic und tkinterdnd2 ...
+python -m pip install --upgrade pyinstaller anthropic tkinterdnd2 || goto :fehler
 
 echo.
 echo [2/2] Baue die EXE ...

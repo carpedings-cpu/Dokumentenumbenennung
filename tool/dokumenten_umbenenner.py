@@ -21,6 +21,15 @@ try:
 except ModuleNotFoundError:  # Tkinter fehlt (z. B. minimales Linux ohne python3-tk)
     tk = None
 
+# Optionales Drag & Drop (Dateien/Ordner ins Fenster ziehen).
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+    _HAS_DND = True
+except Exception:
+    TkinterDnD = None
+    DND_FILES = None
+    _HAS_DND = False
+
 # Skriptverzeichnis in den Pfad, damit die Module unabhaengig vom CWD laden.
 _HIER = os.path.dirname(os.path.abspath(__file__))
 if _HIER not in sys.path:
@@ -72,6 +81,18 @@ class App:
         self._baue_tabelle()
         self._baue_details()
         self._baue_unten()
+        self._aktiviere_dnd()
+
+    def _aktiviere_dnd(self):
+        """Registriert das Fenster fuer Drag & Drop von Dateien/Ordnern."""
+        if not _HAS_DND:
+            return
+        for ziel in (self.root, self.tree):
+            try:
+                ziel.drop_target_register(DND_FILES)
+                ziel.dnd_bind("<<Drop>>", self.on_drop)
+            except Exception:
+                pass
 
     # ----------------------------------------------------------------- UI
     def _baue_oben(self):
@@ -81,6 +102,7 @@ class App:
         ttk.Entry(f, textvariable=self.ordner, width=70).pack(side="left", padx=4)
         ttk.Button(f, text="Durchsuchen…", command=self.waehle_ordner).pack(side="left")
         ttk.Button(f, text="Einlesen", command=self.einlesen).pack(side="left", padx=4)
+        ttk.Button(f, text="Liste leeren", command=self._leeren).pack(side="left")
 
         m = ttk.Frame(self.root, padding=(8, 0))
         m.pack(fill="x")
@@ -93,6 +115,12 @@ class App:
         ttk.Entry(m, textvariable=self.api_key, width=32, show="•").pack(side="left", padx=4)
 
     def _baue_tabelle(self):
+        hinweis = ("Dateien oder ganze Ordner einfach in dieses Fenster ziehen "
+                   "- oder oben einen Ordner waehlen und 'Einlesen'.") if _HAS_DND else \
+                  ("Ordner waehlen und 'Einlesen'. "
+                   "(Drag & Drop in dieser Version nicht verfuegbar.)")
+        ttk.Label(self.root, text=hinweis).pack(anchor="w", padx=10, pady=(0, 2))
+
         f = ttk.Frame(self.root, padding=8)
         f.pack(fill="both", expand=True)
         cols = ("alt", "typ", "datum", "neu")
@@ -182,31 +210,63 @@ class App:
         return sorted(n for n in os.listdir(d)
                       if os.path.isfile(os.path.join(d, n)) and not n.startswith("."))
 
-    def einlesen(self):
+    def _leeren(self):
         for i in self.tree.get_children():
             self.tree.delete(i)
         self.rows.clear()
-        dateien = self._dateien()
-        if not dateien:
-            messagebox.showinfo("Hinweis", "Kein gültiger Ordner oder keine Dateien.")
-            return
+        self.status.set("Liste geleert.")
 
+    def _expandiere(self, pfade):
+        """Macht aus Datei-/Ordnerpfaden eine flache Liste echter Dateien."""
+        dateien = []
+        for p in pfade:
+            p = p.strip().strip("{}")  # tkinterdnd2 klammert Pfade mit Leerzeichen
+            if os.path.isdir(p):
+                for n in sorted(os.listdir(p)):
+                    fp = os.path.join(p, n)
+                    if os.path.isfile(fp) and not n.startswith("."):
+                        dateien.append(fp)
+            elif os.path.isfile(p):
+                dateien.append(p)
+        return dateien
+
+    def einlesen(self):
+        d = self.ordner.get()
+        if not d or not os.path.isdir(d):
+            messagebox.showinfo("Hinweis", "Bitte zuerst einen gültigen Ordner wählen.")
+            return
+        self._add_files([os.path.join(d, n) for n in self._dateien()], anhaengen=False)
+
+    def on_drop(self, event):
+        """Wird beim Hineinziehen von Dateien/Ordnern ausgelöst."""
+        try:
+            pfade = list(self.root.tk.splitlist(event.data))
+        except Exception:
+            pfade = [event.data]
+        self._add_files(pfade, anhaengen=True)
+
+    def _add_files(self, pfade, anhaengen=True):
+        dateien = self._expandiere(pfade)
+        if not dateien:
+            messagebox.showinfo("Hinweis", "Keine Dateien gefunden.")
+            return
         modus = self.modus.get()
-        va_regeln = lade_va_regeln() if modus == "api" else None
         if modus == "api" and not self.api_key.get().strip():
             messagebox.showwarning("API-Schlüssel fehlt",
-                                   "Bitte einen API-Schlüssel eingeben.")
+                                   "Für die automatische Erkennung im Claude-API-Modus "
+                                   "bitte oben einen API-Schlüssel eingeben.")
             return
-
+        if not anhaengen:
+            self._leeren()
+        va_regeln = lade_va_regeln() if modus == "api" else None
         self.protokoll(f"Lese {len(dateien)} Datei(en) – Modus: {modus} …")
-        for idx, name in enumerate(dateien, 1):
+        for idx, fp in enumerate(dateien, 1):
+            name = os.path.basename(fp)
             self.status.set(f"Analysiere {idx}/{len(dateien)}: {name}")
             self.root.update_idletasks()
-            pfad = os.path.join(self.ordner.get(), name)
-            felder = self._analysiere(pfad, name, modus, va_regeln)
-            self._zeile_einfuegen(name, felder)
-        self.status.set(f"Fertig: {len(dateien)} Datei(en) eingelesen.")
-        self.protokoll("Einlesen abgeschlossen. Felder prüfen und 'Alle umbenennen'.")
+            felder = self._analysiere(fp, name, modus, va_regeln)
+            self._zeile_einfuegen(fp, felder)
+        self.status.set(f"Fertig: {len(dateien)} Datei(en). Felder pruefen, dann 'Alle umbenennen'.")
 
     def _analysiere(self, pfad, name, modus, va_regeln):
         endung = os.path.splitext(name)[1].lower()
@@ -252,10 +312,12 @@ class App:
             return VA.baue_planname(felder)
         return VA.baue_standardname(felder)
 
-    def _zeile_einfuegen(self, name, felder):
+    def _zeile_einfuegen(self, pfad, felder):
+        name = os.path.basename(pfad)
         stamm, ext = os.path.splitext(name)
         felder["_ext"] = ext
         felder["_orig"] = name
+        felder["_dir"] = os.path.dirname(os.path.abspath(pfad))
         neu = self._stamm(felder)
         neu_anzeige = (neu + ext) if neu else "(unvollständig)"
         item = self.tree.insert("", "end",
@@ -291,24 +353,26 @@ class App:
     def umbenennen(self):
         if not self.rows:
             return
-        ordner = self.ordner.get()
         plan = []
+        belegt = {}  # Ordner -> Set bereits geplanter Namen (Kollisionsschutz)
         for item, felder in self.rows.items():
             stamm = self._stamm(felder)
             if not stamm:
                 continue
-            ziel = VA.eindeutiger_zielname(ordner, stamm, felder["_ext"],
-                                           felder["_orig"],
-                                           vorhandene={p[2].lower() for p in plan})
+            d = felder["_dir"]
+            vorhandene = belegt.setdefault(d, set())
+            ziel = VA.eindeutiger_zielname(d, stamm, felder["_ext"],
+                                           felder["_orig"], vorhandene=vorhandene)
             if ziel != felder["_orig"]:
-                plan.append((item, felder["_orig"], ziel))
+                plan.append((item, d, felder["_orig"], ziel))
+                vorhandene.add(ziel.lower())
 
         if not plan:
             messagebox.showinfo("Nichts zu tun",
                                 "Keine Änderungen (Felder unvollständig oder Namen gleich).")
             return
 
-        vorschau = "\n".join(f"{alt}  →  {neu}" for _, alt, neu in plan[:25])
+        vorschau = "\n".join(f"{alt}  →  {neu}" for _, _, alt, neu in plan[:25])
         if len(plan) > 25:
             vorschau += f"\n… und {len(plan) - 25} weitere"
         if not messagebox.askyesno("Umbenennen bestätigen",
@@ -316,9 +380,9 @@ class App:
             return
 
         ok = 0
-        for item, alt, neu in plan:
+        for item, d, alt, neu in plan:
             try:
-                os.rename(os.path.join(ordner, alt), os.path.join(ordner, neu))
+                os.rename(os.path.join(d, alt), os.path.join(d, neu))
                 self.tree.item(item, values=(neu, self.rows[item].get("dokumententyp", ""),
                                              self.rows[item].get("datum", ""), "✓ umbenannt"))
                 self.rows[item]["_orig"] = neu
@@ -338,7 +402,7 @@ def main():
             "Windows/macOS: die offiziellen Python-Installer von python.org "
             "enthalten Tkinter bereits.\n")
         sys.exit(1)
-    root = tk.Tk()
+    root = TkinterDnD.Tk() if _HAS_DND else tk.Tk()
     App(root)
     root.mainloop()
 

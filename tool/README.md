@@ -29,11 +29,21 @@ Unter Windows genügt meist ein Doppelklick auf `dokumenten_umbenenner.py`.
 
 ## Bedienung
 
-1. **Ordner** mit den Dokumenten wählen → **Einlesen**.
-2. Modus wählen (Offline oder Claude-API; für API den Schlüssel eintragen).
+1. **Dokumente laden** – zwei Wege:
+   - **Reinziehen:** Dateien oder ganze Ordner direkt ins Fenster ziehen
+     (Drag & Drop).
+   - oder **Ordner** wählen → **Einlesen**.
+2. Modus wählen:
+   - **Offline:** erkennt das Datum automatisch und schlägt einen Typ vor.
+   - **Claude-API:** erkennt **alle Felder automatisch** (auch bei Scans).
+     Dazu oben den **API-Schlüssel** eintragen und „Claude-API" anklicken.
 3. In der Tabelle eine Datei anklicken, unten die **Felder** prüfen/ergänzen,
    **Vorschau aktualisieren**. Für Pläne den Haken *„Planunterlage"* setzen.
 4. **Alle umbenennen** → Bestätigungsdialog → fertig.
+
+> Drag & Drop nutzt das Paket `tkinterdnd2`; in der `.exe` ist es bereits
+> enthalten. Beim Start aus dem Quellcode ggf. `pip install tkinterdnd2`
+> (ohne das Paket funktioniert weiterhin der Weg über „Ordner wählen").
 
 ## Optional: API-Modus einrichten
 
