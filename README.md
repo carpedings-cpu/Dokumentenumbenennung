@@ -3,9 +3,15 @@
 Tool zur **einheitlichen Benennung von Projektdokumenten** nach der
 KPC-Verfahrensanweisung *„Dokumentenbenennung & Versionierung"* (VA, Version 1.1).
 
-Umgesetzt als **Claude Code Skill** – keine Installation, keine Abhängigkeiten.
-Claude liest das Dokument, bildet den Dateinamen nach Schema, zeigt eine
-Vorschau und benennt nach Bestätigung um.
+Es gibt zwei Wege, das Tool zu nutzen:
+
+1. **Claude Code Skill** (`.claude/skills/dokumentenumbenennung/`) – Claude liest
+   das Dokument, bildet den Dateinamen nach Schema, zeigt eine Vorschau und
+   benennt nach Bestätigung um. Läuft innerhalb von Claude Code.
+2. **Desktop-Programm** ([`tool/`](tool/)) – eigenständiges Fenster-Programm
+   **außerhalb von Claude**, mit Umschalter zwischen *offline/regelbasiert* und
+   *Claude-API*. Start: `python tool/dokumenten_umbenenner.py`
+   (Details in [`tool/README.md`](tool/README.md)).
 
 ## Verwendung
 
