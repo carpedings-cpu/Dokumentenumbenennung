@@ -40,6 +40,10 @@ und das Planbenennungsschema stehen in:
 
 - [`.claude/skills/dokumentenumbenennung/SKILL.md`](.claude/skills/dokumentenumbenennung/SKILL.md)
 
+Die zugrunde liegende Verfahrensanweisung (Originalquelle) liegt unter:
+
+- [`docs/VA_Dokumentenbenennung_1.1.pdf`](docs/VA_Dokumentenbenennung_1.1.pdf)
+
 ## Grundregeln
 
 - Keine Leerzeichen/Sonderzeichen; Umlaute erlaubt.
