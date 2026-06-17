@@ -39,8 +39,10 @@ jobs:
           path: dist/Dokumenten-Umbenenner.exe
           if-no-files-found: error
 
-      - name: Release anlegen (nur bei Versions-Tag)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Release anlegen (Versions-Tag oder manueller Start)
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && 'v1.0' || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && 'v1.0' || github.ref_name }}
           files: dist/Dokumenten-Umbenenner.exe
