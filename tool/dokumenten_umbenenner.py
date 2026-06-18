@@ -216,9 +216,9 @@ class App:
         """Sicherer Weg ohne Drag & Drop: Dateien/E-Mails per Dialog auswählen."""
         pfade = filedialog.askopenfilenames(
             title="Dateien oder E-Mails wählen",
-            filetypes=[("Dokumente & E-Mails", "*.pdf *.eml *.msg *.docx *.doc *.txt "
-                                              "*.png *.jpg *.jpeg *.tif *.tiff"),
-                       ("Alle Dateien", "*.*")])
+            filetypes=[("Alle Dateien", "*.*"),
+                       ("Dokumente & E-Mails", "*.pdf *.eml *.msg *.docx *.doc *.txt "
+                                              "*.png *.jpg *.jpeg *.tif *.tiff")])
         if pfade:
             self._add_files(list(pfade), anhaengen=True)
 
@@ -257,12 +257,28 @@ class App:
         self._add_files([os.path.join(d, n) for n in self._dateien()], anhaengen=False)
 
     def on_drop(self, event):
-        """Wird beim Hineinziehen von Dateien/Ordnern ausgelöst."""
+        """Wird beim Hineinziehen ausgelöst. Nur echte Dateien/Ordner verarbeiten."""
         try:
-            pfade = list(self.root.tk.splitlist(event.data))
+            roh = list(self.root.tk.splitlist(event.data))
         except Exception:
-            pfade = [event.data]
-        self._add_files(pfade, anhaengen=True)
+            roh = [event.data]
+        echte = [p.strip().strip("{}") for p in roh]
+        echte = [p for p in echte if p and os.path.exists(p)]
+        if not echte:
+            self.protokoll("Drop erkannt, aber keine Datei erhalten. Wurde eine E-Mail "
+                           "DIREKT aus Outlook gezogen? Bitte die Mail zuerst als .msg "
+                           "speichern (Outlook: Datei → Speichern unter) und dann "
+                           "hineinziehen oder 'Dateien wählen…' nutzen.")
+            messagebox.showinfo(
+                "Keine Datei erhalten",
+                "Beim Reinziehen kam keine Datei an.\n\n"
+                "Wenn du eine E-Mail direkt aus Outlook gezogen hast: Outlook gibt "
+                "dabei keine Datei weiter.\n\n"
+                "Speichere die Mail zuerst als .msg-Datei (Outlook: Datei -> "
+                "Speichern unter, Dateityp 'Outlook-Nachricht (*.msg)') und ziehe "
+                "dann diese Datei hinein - oder nutze 'Dateien wählen...'.")
+            return
+        self._add_files(echte, anhaengen=True)
 
     def _emails_extrahieren(self, dateien):
         """E-Mails (.eml/.msg) -> Mailtext-PDF + Anhaenge; sonst Datei unveraendert."""
