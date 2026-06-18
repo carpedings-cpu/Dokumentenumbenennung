@@ -341,6 +341,15 @@ class App:
                           "bezeichnung", "version"):
                     felder[k] = erg.get(k, "") or ""
                 felder["ist_plan"] = bool(erg.get("ist_plan"))
+                # --- VA-Konformitaet erzwingen ---
+                roh_typ = felder["dokumententyp"]
+                felder["dokumententyp"] = VA.normalisiere_typ(roh_typ)
+                if roh_typ and not felder["dokumententyp"]:
+                    self.protokoll(f"  {name}: Typ '{roh_typ}' ist nicht in der "
+                                   "VA-Referenzliste – bitte Typ manuell wählen.")
+                felder["datum"] = VA.normalisiere_datum(felder["datum"])
+                if felder["dokumententyp"] in VA.TYPEN_OHNE_DATUM:
+                    felder["datum"] = ""        # Datum entfaellt laut VA
                 if erg.get("hinweis"):
                     self.protokoll(f"  {name}: {erg['hinweis']}")
                 return felder
@@ -370,6 +379,8 @@ class App:
     def _stamm(self, felder):
         if felder.get("ist_plan"):
             return VA.baue_planname(felder)
+        if not felder.get("dokumententyp"):
+            return ""   # ohne gueltigen Typ kein VA-konformer Name
         return VA.baue_standardname(felder)
 
     def _zeile_einfuegen(self, pfad, felder):

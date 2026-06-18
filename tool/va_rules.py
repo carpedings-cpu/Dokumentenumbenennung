@@ -146,6 +146,41 @@ def typ_aus_text(text):
     return ""
 
 
+# Synonyme/haeufige Begriffe -> erlaubter VA-Typ. Bewusst konservativ gehalten.
+_SYNONYME = {
+    "angebot": "Schriftverkehr", "kostenvoranschlag": "Schriftverkehr",
+    "brief": "Schriftverkehr", "schreiben": "Schriftverkehr",
+    "anschreiben": "Schriftverkehr", "fax": "Schriftverkehr",
+    "korrespondenz": "Schriftverkehr",
+    "email": "E-Mail", "e mail": "E-Mail", "mail": "E-Mail",
+    "aktennotiz": "Vermerk", "notiz": "Vermerk",
+    "lieferschein": "Lieferavis", "auftragsbestaetigung": "Auftragsbestätigung",
+}
+
+
+def normalisiere_typ(typ):
+    """Bildet einen Typ auf die VA-Referenzliste ab; '' wenn nicht zulaessig."""
+    if not typ:
+        return ""
+    roh = typ.strip()
+    for t in DOKUMENTTYPEN:                       # exakter Treffer (case-insensitiv)
+        if t.lower() == roh.lower():
+            return t
+    schluessel = re.sub(r"[-_]+", " ", roh.lower()).replace("ä", "ae")\
+        .replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+    return _SYNONYME.get(schluessel, _SYNONYME.get(roh.lower(), ""))
+
+
+def normalisiere_datum(s):
+    """Bringt eine Datumsangabe in das Format JJMMTT (sonst '')."""
+    s = (s or "").strip()
+    if re.fullmatch(r"\d{6}", s):                 # bereits JJMMTT
+        return s
+    if re.fullmatch(r"\d{8}", s):                 # JJJJMMTT
+        return s[2:]
+    return datum_aus_text(s)
+
+
 # ---------------------------------------------------------------------------
 # Bereinigung & Namensbau
 # ---------------------------------------------------------------------------

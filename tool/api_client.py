@@ -12,6 +12,10 @@ SDK bleibt der Offline-Modus voll funktionsfaehig.
 import base64
 import json
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import va_rules as _VA  # noqa: E402
 
 MODELL = "claude-opus-4-8"
 
@@ -38,20 +42,29 @@ _AUSGABE_SCHEMA = {
 _AUFGABE = (
     "Du erhaeltst ein Projektdokument. Bestimme die Felder fuer den Dateinamen "
     "streng nach der oben stehenden Verfahrensanweisung (VA Dokumentenbenennung).\n\n"
+    "ERLAUBTE DOKUMENTTYPEN (dokumententyp MUSS EXAKT einer davon sein, sonst nichts):\n"
+    + ", ".join(_VA.DOKUMENTTYPEN) + "\n\n"
     "Regeln fuer die Ausgabe:\n"
-    "- datum: Format JJMMTT aus Erstellung/Eingang/Versand. Wenn das Datum laut "
-    "VA entfaellt (Plan-, Vertrags-, Betriebsanleitungs-, extern erstellte "
-    "Dokumente) oder nicht ermittelbar ist: leer lassen.\n"
-    "- quelle: nur bei extern erstellten Dokumenten (Kunde, Planer, Lieferant, "
-    "Behoerde), sonst leer.\n"
+    "- dokumententyp: GENAU ein Wert aus obiger Liste. Niemals einen anderen "
+    "Begriff erfinden. Zuordnung haeufiger Faelle: Angebot/Kostenvoranschlag/Brief/"
+    "Schreiben/Fax/Anschreiben -> 'Schriftverkehr'; E-Mail -> 'E-Mail'; "
+    "Aktennotiz -> 'Vermerk'.\n"
+    "- datum: Format JJMMTT (z. B. 260617) aus Erstellung/Eingang/Versand des "
+    "Dokuments. Wenn das Datum laut VA entfaellt (Plan-, Vertrags-, "
+    "Betriebsanleitungs-, extern erstellte Dokumente) oder nicht ermittelbar ist: "
+    "leer.\n"
+    "- quelle: NUR die Kategorie bei extern erstellten Dokumenten: 'Kunde', "
+    "'Planer', 'Lieferant' oder 'Behörde'. Der konkrete Firmen-/Personenname "
+    "gehoert NICHT hierhin, sondern in die Bezeichnung. Sonst leer.\n"
     "- phase: nur bei Abnahme/Einweisung/IBN, sonst leer.\n"
-    "- dokumententyp: MUSS exakt aus der Referenzliste (Kapitel 5) stammen.\n"
-    "- bezeichnung: kurze, praezise inhaltliche Beschreibung.\n"
+    "- bezeichnung: kurze, sprechende inhaltliche Beschreibung MIT Firmen-/"
+    "Betreffbezug (z. B. 'Angebot-Bech-Rollladen'). NIEMALS die Dokument-/Beleg-/"
+    "Angebotsnummer als Bezeichnung verwenden.\n"
     "- version: nur bei Entwuerfen/freigegebenen Staenden, sonst leer.\n"
-    "- ist_plan: true, wenn es eine Planunterlage ist (Kapitel 6).\n"
-    "- vorgeschlagener_name: der vollstaendige Dateiname OHNE Endung, exakt nach "
-    "Schema gebaut (keine Leerzeichen/Sonderzeichen, Umlaute erlaubt, _ trennt "
-    "Felder, - innerhalb eines Feldes). Bei Plaenen das Planbenennungsschema.\n"
+    "- ist_plan: true nur bei Planunterlagen (Kapitel 6).\n"
+    "- vorgeschlagener_name: vollstaendiger Dateiname OHNE Endung nach Schema "
+    "(keine Leerzeichen/Sonderzeichen, Umlaute erlaubt, _ trennt Felder, - "
+    "innerhalb eines Feldes).\n"
     "- hinweis: kurze Begruendung oder Unsicherheit (eine Zeile)."
 )
 
