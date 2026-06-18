@@ -109,7 +109,9 @@ class App:
         ttk.Label(m, text="Modus:").pack(side="left")
         ttk.Radiobutton(m, text="Offline (regelbasiert)", value="offline",
                         variable=self.modus).pack(side="left")
-        ttk.Radiobutton(m, text="Claude-API", value="api",
+        ttk.Radiobutton(m, text="Claude-API", value="claude",
+                        variable=self.modus).pack(side="left", padx=(4, 0))
+        ttk.Radiobutton(m, text="Gemini-API", value="gemini",
                         variable=self.modus).pack(side="left", padx=(4, 12))
         ttk.Label(m, text="API-Schlüssel:").pack(side="left")
         ttk.Entry(m, textvariable=self.api_key, width=32, show="•").pack(side="left", padx=4)
@@ -251,14 +253,15 @@ class App:
             messagebox.showinfo("Hinweis", "Keine Dateien gefunden.")
             return
         modus = self.modus.get()
-        if modus == "api" and not self.api_key.get().strip():
+        ist_api = modus in ("claude", "gemini")
+        if ist_api and not self.api_key.get().strip():
             messagebox.showwarning("API-Schlüssel fehlt",
-                                   "Für die automatische Erkennung im Claude-API-Modus "
-                                   "bitte oben einen API-Schlüssel eingeben.")
+                                   "Für die automatische Erkennung im API-Modus bitte "
+                                   "oben den passenden API-Schlüssel eingeben.")
             return
         if not anhaengen:
             self._leeren()
-        va_regeln = lade_va_regeln() if modus == "api" else None
+        va_regeln = lade_va_regeln() if ist_api else None
         self.protokoll(f"Lese {len(dateien)} Datei(en) – Modus: {modus} …")
         for idx, fp in enumerate(dateien, 1):
             name = os.path.basename(fp)
@@ -273,10 +276,15 @@ class App:
         felder = {k: "" for k in self.var}
         felder["ist_plan"] = False
 
-        if modus == "api":
+        if modus in ("claude", "gemini"):
             try:
-                import api_client
-                erg = api_client.analysiere(pfad, va_regeln, self.api_key.get().strip())
+                key = self.api_key.get().strip()
+                if modus == "claude":
+                    import api_client
+                    erg = api_client.analysiere(pfad, va_regeln, key)
+                else:
+                    import gemini_client
+                    erg = gemini_client.analysiere(pfad, va_regeln, key)
                 for k in ("datum", "quelle", "phase", "dokumententyp",
                           "bezeichnung", "version"):
                     felder[k] = erg.get(k, "") or ""

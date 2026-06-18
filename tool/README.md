@@ -35,8 +35,12 @@ Unter Windows genügt meist ein Doppelklick auf `dokumenten_umbenenner.py`.
    - oder **Ordner** wählen → **Einlesen**.
 2. Modus wählen:
    - **Offline:** erkennt das Datum automatisch und schlägt einen Typ vor.
-   - **Claude-API:** erkennt **alle Felder automatisch** (auch bei Scans).
-     Dazu oben den **API-Schlüssel** eintragen und „Claude-API" anklicken.
+   - **Claude-API** oder **Gemini-API:** erkennt **alle Felder automatisch**
+     (auch bei Scans). Dazu den passenden Modus anklicken und oben den
+     **API-Schlüssel** dieses Anbieters eintragen.
+     - Claude-Schlüssel: console.anthropic.com → API Keys (`sk-ant-…`)
+     - Gemini-Schlüssel: aistudio.google.com/apikey (`AIza…`, Modell
+       `gemini-2.5-flash`)
 3. In der Tabelle eine Datei anklicken, unten die **Felder** prüfen/ergänzen,
    **Vorschau aktualisieren**. Für Pläne den Haken *„Planunterlage"* setzen.
 4. **Alle umbenennen** → Bestätigungsdialog → fertig.

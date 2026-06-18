@@ -12,7 +12,7 @@ from PyInstaller.utils.hooks import collect_all
 # den Systemprompt auch ohne Quelldateien findet.
 datas = [(os.path.join(".claude", "skills", "dokumentenumbenennung", "SKILL.md"), ".")]
 binaries = []
-hiddenimports = ["va_rules", "pdf_text", "api_client"]
+hiddenimports = ["va_rules", "pdf_text", "api_client", "gemini_client"]
 
 # Anthropic-SDK mitbuendeln, falls installiert (fuer den optionalen API-Modus).
 # Fehlt es, bleibt der Offline-Modus voll funktionsfaehig.
