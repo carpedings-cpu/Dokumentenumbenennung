@@ -29,10 +29,17 @@ Unter Windows genügt meist ein Doppelklick auf `dokumenten_umbenenner.py`.
 
 ## Bedienung
 
-1. **Dokumente laden** – zwei Wege:
-   - **Reinziehen:** Dateien, ganze Ordner oder **E-Mails** direkt ins Fenster
-     ziehen (Drag & Drop).
+1. **Dokumente laden** – mehrere Wege:
+   - **Dateien wählen…** – Mehrfachauswahl per Dialog (auch `.eml`/`.msg`).
+     Funktioniert immer, auch wenn Drag & Drop nicht geht.
+   - **Reinziehen:** Dateien, ganze Ordner oder **E-Mails** ins Fenster ziehen.
    - oder **Ordner** wählen → **Einlesen**.
+
+   > **Outlook-Hinweis:** Eine E-Mail **direkt aus Outlook** ins Fenster zu
+   > ziehen liefert oft keine Datei. Speichere sie zuerst als `.msg`
+   > (in Outlook „Speichern unter" oder auf den Desktop ziehen) und nutze dann
+   > „Dateien wählen…" bzw. Drag & Drop. Beim Start zeigt das Protokoll unten,
+   > ob Drag & Drop aktiv ist.
 
    **E-Mails (`.eml`/`.msg`)** werden automatisch zerlegt: der **Mailtext wird
    als PDF** erzeugt und **alle Anhänge** als eigene Dateien herausgelöst –

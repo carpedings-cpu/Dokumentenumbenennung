@@ -85,15 +85,20 @@ class App:
         self._aktiviere_dnd()
 
     def _aktiviere_dnd(self):
-        """Registriert das Fenster fuer Drag & Drop von Dateien/Ordnern."""
+        """Registriert das Fenster fuer Drag & Drop; meldet Erfolg/Misserfolg."""
+        self.dnd_ok = False
         if not _HAS_DND:
+            self.protokoll("Drag & Drop nicht verfügbar – bitte 'Dateien wählen…' nutzen.")
             return
-        for ziel in (self.root, self.tree):
-            try:
-                ziel.drop_target_register(DND_FILES)
-                ziel.dnd_bind("<<Drop>>", self.on_drop)
-            except Exception:
-                pass
+        try:
+            self.root.drop_target_register(DND_FILES)
+            self.root.dnd_bind("<<Drop>>", self.on_drop)
+            self.dnd_ok = True
+            self.protokoll("Drag & Drop aktiv. Hinweis: Outlook-Mails ggf. erst "
+                           "als Datei (.msg) speichern, dann hineinziehen.")
+        except Exception as e:  # noqa: BLE001
+            self.protokoll(f"Drag & Drop konnte nicht aktiviert werden: {e} "
+                           "– bitte 'Dateien wählen…' nutzen.")
 
     # ----------------------------------------------------------------- UI
     def _baue_oben(self):
@@ -103,7 +108,8 @@ class App:
         ttk.Entry(f, textvariable=self.ordner, width=70).pack(side="left", padx=4)
         ttk.Button(f, text="Durchsuchen…", command=self.waehle_ordner).pack(side="left")
         ttk.Button(f, text="Einlesen", command=self.einlesen).pack(side="left", padx=4)
-        ttk.Button(f, text="Liste leeren", command=self._leeren).pack(side="left")
+        ttk.Button(f, text="Dateien wählen…", command=self.waehle_dateien).pack(side="left")
+        ttk.Button(f, text="Liste leeren", command=self._leeren).pack(side="left", padx=4)
 
         m = ttk.Frame(self.root, padding=(8, 0))
         m.pack(fill="x")
@@ -118,10 +124,10 @@ class App:
         ttk.Entry(m, textvariable=self.api_key, width=32, show="•").pack(side="left", padx=4)
 
     def _baue_tabelle(self):
-        hinweis = ("Dateien, ganze Ordner oder E-Mails (.eml/.msg) ins Fenster ziehen "
-                   "- E-Mails werden in Mailtext-PDF + Anhänge zerlegt.") if _HAS_DND else \
-                  ("Ordner waehlen und 'Einlesen'. "
-                   "(Drag & Drop in dieser Version nicht verfuegbar.)")
+        hinweis = ("Reinziehen ODER 'Dateien wählen…' (auch .eml/.msg). E-Mails werden "
+                   "in Mailtext-PDF + Anhänge zerlegt. Outlook-Mail ggf. erst als .msg "
+                   "speichern.") if _HAS_DND else \
+                  ("'Dateien wählen…' oder Ordner wählen + 'Einlesen' (auch .eml/.msg).")
         ttk.Label(self.root, text=hinweis).pack(anchor="w", padx=10, pady=(0, 2))
 
         f = ttk.Frame(self.root, padding=8)
@@ -205,6 +211,16 @@ class App:
         d = filedialog.askdirectory(title="Ordner mit Dokumenten wählen")
         if d:
             self.ordner.set(d)
+
+    def waehle_dateien(self):
+        """Sicherer Weg ohne Drag & Drop: Dateien/E-Mails per Dialog auswählen."""
+        pfade = filedialog.askopenfilenames(
+            title="Dateien oder E-Mails wählen",
+            filetypes=[("Dokumente & E-Mails", "*.pdf *.eml *.msg *.docx *.doc *.txt "
+                                              "*.png *.jpg *.jpeg *.tif *.tiff"),
+                       ("Alle Dateien", "*.*")])
+        if pfade:
+            self._add_files(list(pfade), anhaengen=True)
 
     def _dateien(self):
         d = self.ordner.get()
@@ -430,7 +446,16 @@ def main():
             "Windows/macOS: die offiziellen Python-Installer von python.org "
             "enthalten Tkinter bereits.\n")
         sys.exit(1)
-    root = TkinterDnD.Tk() if _HAS_DND else tk.Tk()
+    global _HAS_DND
+    root = None
+    if _HAS_DND:
+        try:
+            root = TkinterDnD.Tk()      # DnD-faehiges Fenster
+        except Exception:
+            _HAS_DND = False            # Fenster trotzdem oeffnen, ohne DnD
+            root = None
+    if root is None:
+        root = tk.Tk()
     App(root)
     root.mainloop()
 
