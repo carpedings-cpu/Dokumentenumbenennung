@@ -83,9 +83,15 @@ PLAN_STATUS = {"V": "Vorabzug", "PL": "Prüflauf", "F": "Freigegeben"}
 # Datum
 # ---------------------------------------------------------------------------
 _MONATE = {
-    "januar": 1, "februar": 2, "märz": 3, "maerz": 3, "april": 4, "mai": 5,
-    "juni": 6, "juli": 7, "august": 8, "september": 9, "oktober": 10,
-    "november": 11, "dezember": 12,
+    # Deutsch (voll + Abkürzungen)
+    "januar": 1, "jan": 1, "februar": 2, "feb": 2, "märz": 3, "maerz": 3,
+    "mrz": 3, "april": 4, "apr": 4, "mai": 5, "juni": 6, "jun": 6,
+    "juli": 7, "jul": 7, "august": 8, "aug": 8, "september": 9, "sep": 9,
+    "sept": 9, "oktober": 10, "okt": 10, "november": 11, "nov": 11,
+    "dezember": 12, "dez": 12,
+    # Englisch (für E-Mail-Datumszeilen wie "15 Apr 2025")
+    "january": 1, "february": 2, "march": 3, "may": 5, "june": 6, "july": 7,
+    "october": 10, "december": 12, "mar": 3, "oct": 10, "dec": 12,
 }
 
 
@@ -127,15 +133,15 @@ def typ_aus_text(text):
     """Schlaegt den am besten passenden Dokumententyp aus der Referenzliste vor."""
     if not text:
         return ""
-    low = text.lower()
+    # Bindestriche/Unterstriche zu Leerzeichen -> ganzwoertliche Treffer moeglich
+    low = re.sub(r"[-_]+", " ", text.lower())
     treffer = []
     for typ in DOKUMENTTYPEN:
-        # Suchbegriff = Typ ohne Unterstriche, klein
         begriff = typ.replace("_", " ").replace("-", " ").lower()
-        if begriff in low:
+        if re.search(r"\b" + re.escape(begriff) + r"\b", low):
             treffer.append((len(begriff), typ))
     if treffer:
-        treffer.sort(reverse=True)
+        treffer.sort(reverse=True)   # laengster (spezifischster) Treffer gewinnt
         return treffer[0][1]
     return ""
 

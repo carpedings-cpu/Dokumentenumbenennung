@@ -12,7 +12,7 @@ from PyInstaller.utils.hooks import collect_all
 # den Systemprompt auch ohne Quelldateien findet.
 datas = [(os.path.join(".claude", "skills", "dokumentenumbenennung", "SKILL.md"), ".")]
 binaries = []
-hiddenimports = ["va_rules", "pdf_text", "api_client", "gemini_client"]
+hiddenimports = ["va_rules", "pdf_text", "api_client", "gemini_client", "email_extract"]
 
 # Anthropic-SDK mitbuendeln, falls installiert (fuer den optionalen API-Modus).
 # Fehlt es, bleibt der Offline-Modus voll funktionsfaehig.
@@ -32,6 +32,16 @@ try:
     hiddenimports += d_hidden
 except Exception:
     pass
+
+# extract-msg (Outlook-.msg-E-Mails) inkl. Abhaengigkeiten mitbuendeln.
+for _pkg in ("extract_msg", "compressed_rtf", "RTFDE", "ebcdic"):
+    try:
+        e_datas, e_binaries, e_hidden = collect_all(_pkg)
+        datas += e_datas
+        binaries += e_binaries
+        hiddenimports += e_hidden
+    except Exception:
+        pass
 
 a = Analysis(
     [os.path.join("tool", "dokumenten_umbenenner.py")],

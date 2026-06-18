@@ -30,9 +30,14 @@ Unter Windows genügt meist ein Doppelklick auf `dokumenten_umbenenner.py`.
 ## Bedienung
 
 1. **Dokumente laden** – zwei Wege:
-   - **Reinziehen:** Dateien oder ganze Ordner direkt ins Fenster ziehen
-     (Drag & Drop).
+   - **Reinziehen:** Dateien, ganze Ordner oder **E-Mails** direkt ins Fenster
+     ziehen (Drag & Drop).
    - oder **Ordner** wählen → **Einlesen**.
+
+   **E-Mails (`.eml`/`.msg`)** werden automatisch zerlegt: der **Mailtext wird
+   als PDF** erzeugt und **alle Anhänge** als eigene Dateien herausgelöst –
+   danach werden PDF und Anhänge wie normale Dokumente nach VA benannt.
+   (`.msg` von Outlook nutzt `extract-msg`; in der `.exe` enthalten.)
 2. Modus wählen:
    - **Offline:** erkennt das Datum automatisch und schlägt einen Typ vor.
    - **Claude-API** oder **Gemini-API:** erkennt **alle Felder automatisch**

@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Versions-Tag für das Release (z. B. v1.2)"
+        description: "Versions-Tag für das Release (z. B. v1.3)"
         required: false
-        default: "v1.2"
+        default: "v1.3"
   push:
     tags:
       - "v*"
@@ -32,7 +32,7 @@ jobs:
           python-version: "3.12"
 
       - name: Abhaengigkeiten installieren
-        run: pip install pyinstaller anthropic tkinterdnd2
+        run: pip install pyinstaller anthropic tkinterdnd2 extract-msg
 
       - name: EXE bauen
         run: pyinstaller --noconfirm dokumenten-umbenenner.spec

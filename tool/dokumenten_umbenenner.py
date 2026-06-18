@@ -36,6 +36,7 @@ if _HIER not in sys.path:
     sys.path.insert(0, _HIER)
 
 import va_rules as VA            # noqa: E402
+import email_extract             # noqa: E402
 from pdf_text import extract_pdf_text  # noqa: E402
 
 LESBARE_TEXT_ENDUNGEN = {".pdf", ".txt", ".md"}
@@ -117,8 +118,8 @@ class App:
         ttk.Entry(m, textvariable=self.api_key, width=32, show="•").pack(side="left", padx=4)
 
     def _baue_tabelle(self):
-        hinweis = ("Dateien oder ganze Ordner einfach in dieses Fenster ziehen "
-                   "- oder oben einen Ordner waehlen und 'Einlesen'.") if _HAS_DND else \
+        hinweis = ("Dateien, ganze Ordner oder E-Mails (.eml/.msg) ins Fenster ziehen "
+                   "- E-Mails werden in Mailtext-PDF + Anhänge zerlegt.") if _HAS_DND else \
                   ("Ordner waehlen und 'Einlesen'. "
                    "(Drag & Drop in dieser Version nicht verfuegbar.)")
         ttk.Label(self.root, text=hinweis).pack(anchor="w", padx=10, pady=(0, 2))
@@ -247,8 +248,27 @@ class App:
             pfade = [event.data]
         self._add_files(pfade, anhaengen=True)
 
+    def _emails_extrahieren(self, dateien):
+        """E-Mails (.eml/.msg) -> Mailtext-PDF + Anhaenge; sonst Datei unveraendert."""
+        ergebnis = []
+        for fp in dateien:
+            if email_extract.ist_email(fp):
+                try:
+                    neu = email_extract.extrahiere(fp)
+                    if neu:
+                        self.protokoll(f"E-Mail {os.path.basename(fp)} -> {len(neu)} Datei(en) "
+                                       "extrahiert (Mailtext + Anhänge).")
+                        ergebnis += neu
+                    else:
+                        self.protokoll(f"  {os.path.basename(fp)}: nichts extrahierbar.")
+                except Exception as e:  # noqa: BLE001
+                    self.protokoll(f"  E-Mail-Fehler bei {os.path.basename(fp)}: {e}")
+            else:
+                ergebnis.append(fp)
+        return ergebnis
+
     def _add_files(self, pfade, anhaengen=True):
-        dateien = self._expandiere(pfade)
+        dateien = self._emails_extrahieren(self._expandiere(pfade))
         if not dateien:
             messagebox.showinfo("Hinweis", "Keine Dateien gefunden.")
             return
