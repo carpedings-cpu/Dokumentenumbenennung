@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+
+# Triage: lokale Geheimnisse und Laufzeit-Status nicht einchecken
+.env
+tool/triage/.env
+tool/triage/triage_state.json
+tool/triage/triage_config.json

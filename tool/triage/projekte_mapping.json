@@ -1,0 +1,19 @@
+{
+  "_hinweis": "Pflege diese Datei selbst. Neue Projekt-Unterordner unter base_dir werden beim Lauf automatisch ergaenzt (mit leeren Domains/Stichworten). 'domains' = bekannte Absender-Domains (z. B. lieferant.de), 'betreff_stichworte' = Worte, die im Betreff auf dieses Projekt deuten.",
+  "projekte": [
+    {
+      "name": "1030 Musterstrasse",
+      "kuerzel": "1030",
+      "ordner": "1030_Musterstrasse",
+      "domains": ["kunde-beispiel.de", "planer-beispiel.de"],
+      "betreff_stichworte": ["Musterstrasse", "1030", "BV Muster"]
+    },
+    {
+      "name": "1042 Beispielklinik",
+      "kuerzel": "1042",
+      "ordner": "1042_Beispielklinik",
+      "domains": ["bauherr-klinik.de"],
+      "betreff_stichworte": ["Beispielklinik", "1042"]
+    }
+  ]
+}
