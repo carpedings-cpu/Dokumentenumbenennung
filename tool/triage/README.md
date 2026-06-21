@@ -23,7 +23,21 @@ copy .env.example .env        # und ausfüllen (nur falls Stufe 2 gewünscht)
 Outlook muss installiert und mit dem Konto eingerichtet sein (Desktop-Outlook,
 nicht „neues Outlook"/Store-App – die hat kein COM).
 
-## Verwendung
+## Ganz einfach: zum Doppelklicken (kein Tippen nötig)
+Im Ordner `tool/triage/` liegen drei Dateien:
+
+1. **`0_Einrichten.bat`** – einmal doppelklicken (installiert die nötigen Teile).
+2. **`1_Probelauf.bat`** – Probelauf: schaut nur und öffnet die Übersicht,
+   legt **nichts** ab und verändert **nichts**.
+3. **`2_Scharf_schalten.bat`** – legt die wichtigen Mails wirklich ins
+   Eingangs-Körbchen (fragt vorher zur Sicherheit nach).
+
+> Beim ersten Doppelklick warnt Windows evtl. („Geschützt") → „Weitere
+> Informationen" → „Trotzdem ausführen".
+
+---
+
+## Für Technische: Befehle
 ```
 python triage.py                     # 1) TROCKENLAUF: nur klassifizieren + HTML
 python triage.py --scharf            # 2) scharf: relevante Mails als .msg ablegen
