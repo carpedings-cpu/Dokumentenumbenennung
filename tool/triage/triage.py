@@ -52,6 +52,7 @@ CONFIG = {
     "eingang_unterordner": "00_Posteingang",     # Übergabe an den Skill
     "bericht_unterordner": "Triage-Berichte",
     "outlook_kategorie": "KPC-Triage",            # nur mit --mit-kategorie
+    "gesendete_einbeziehen": True,                 # auch den Ordner "Gesendete" durchsuchen
     # Ordner, die NICHT als Projekt zählen:
     "ignorierte_ordner": ["00_Posteingang", "Triage-Berichte", "tool",
                           ".git", "docs", "__pycache__"],
@@ -240,13 +241,57 @@ def speichere_state(state):
 # ---------------------------------------------------------------------------
 # Outlook (READ-ONLY)
 # ---------------------------------------------------------------------------
-def outlook_posteingang():
+def outlook_ordner(folder_id):
     try:
         import win32com.client
     except ImportError as e:
         raise RuntimeError("pywin32 wird benötigt: pip install pywin32") from e
     ns = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
-    return ns.GetDefaultFolder(6)  # 6 = olFolderInbox
+    return ns.GetDefaultFolder(folder_id)
+
+
+def outlook_posteingang():
+    return outlook_ordner(6)  # 6 = olFolderInbox
+
+
+def _ordner_liste(cfg):
+    """Zu durchsuchende Ordner: Posteingang immer, Gesendete optional."""
+    liste = [(6, "Eingang")]
+    if cfg.get("gesendete_einbeziehen", True):
+        liste.append((5, "Gesendet"))   # 5 = olFolderSentMail
+    return liste
+
+
+def empfaenger_info(item):
+    """Erster Empfänger (Anzeige, Domain) für gesendete Mails – nur lesend."""
+    try:
+        to = item.To or ""
+    except Exception:
+        to = ""
+    domain = ""
+    try:
+        rec = item.Recipients
+        if rec and rec.Count >= 1:
+            r = rec.Item(1)
+            adr = ""
+            try:
+                ae = r.AddressEntry
+                if (ae.Type or "").upper() == "EX":
+                    try:
+                        adr = ae.GetExchangeUser().PrimarySmtpAddress or ""
+                    except Exception:
+                        adr = ""
+                if not adr:
+                    adr = r.Address or ""
+            except Exception:
+                adr = r.Address or ""
+            if "@" in adr:
+                domain = adr.split("@")[-1]
+            if not to:
+                to = adr
+    except Exception:
+        pass
+    return (to or "(unbekannt)"), domain
 
 
 def smtp_adresse(item):
@@ -371,12 +416,13 @@ def baue_html(zeilen, scharf):
         if not rows:
             continue
         teile.append(f'<h2 class="{klasse[g]}">{esc(titel[g])} ({len(rows)})</h2>')
-        teile.append("<table><tr><th>Projekt</th><th>Kategorie</th>"
-                     "<th>Absender</th><th>Betreff</th><th>Eingang</th></tr>")
+        teile.append("<table><tr><th>Richtung</th><th>Projekt</th><th>Kategorie</th>"
+                     "<th>Absender/Empfänger</th><th>Betreff</th><th>Datum</th></tr>")
         for z in rows:
             ki = ' <span class="ki">(KI)</span>' if z.get("ki") else ""
             teile.append(
                 "<tr>"
+                f"<td>{esc(z.get('richtung', 'Eingang'))}</td>"
                 f'<td><span class="kuerzel">{esc(z["kuerzel"])}</span> {esc(z["projekt"])}</td>'
                 f"<td>{esc(z['kategorie'])}{ki}</td>"
                 f"<td>{esc(z['absender'])}</td>"
@@ -427,76 +473,93 @@ def vorbereiten(heute=False, seit=None, stufe2=False):
 
 
 def sammle_mails(ctx, max_n=0):
-    """Liest den Posteingang READ-ONLY und klassifiziert; gibt (zeilen, neue_max)."""
-    posteingang = outlook_posteingang()
-    items = posteingang.Items
-    items.Sort("[ReceivedTime]", True)   # neueste zuerst
+    """Liest Posteingang (und optional Gesendete) READ-ONLY; gibt (zeilen, neue_max)."""
     marker = ctx["marker"]
     verarbeitet = ctx["verarbeitet"]
     mapping = ctx["mapping"]
     zeilen, neue_max, geprueft = [], marker, 0
 
-    item = items.GetFirst()
-    while item is not None:
-        if max_n and geprueft >= max_n:
-            break
+    for fid, richtung in _ordner_liste(ctx["cfg"]):
         try:
-            if int(getattr(item, "Class", 0)) != 43:   # 43 = olMail
-                item = items.GetNext(); continue
-            received = py_datetime(item.ReceivedTime)
-            if received <= marker:
-                break
-            entry_id = item.EntryID
-            if entry_id in verarbeitet:
-                item = items.GetNext(); continue
-            geprueft += 1
-
-            betreff = item.Subject or ""
-            absender = smtp_adresse(item)
-            domain = absender.split("@")[-1] if "@" in absender else ""
-            try:
-                auszug = (item.Body or "")[:800]
-            except Exception:
-                auszug = ""
-
-            projekt, _ = finde_projekt(mapping, domain, betreff)
-            kategorie = finde_kategorie(betreff, auszug)
-            eindeutig = projekt is not None and kategorie != "Info"
-            ki = False
-            if not eindeutig and ctx["use_api"]:
-                try:
-                    meta = {"absender": absender, "betreff": betreff, "auszug": auszug}
-                    p_kuerzel, k = klassifiziere_stufe2(meta, ctx["api_key"], ctx["projektnamen"])
-                    if k in KATEGORIEN:
-                        kategorie = k
-                    if p_kuerzel:
-                        treffer = next((p for p in mapping["projekte"]
-                                        if p.get("kuerzel", "").lower() == p_kuerzel.lower()
-                                        or p.get("name", "").lower() == p_kuerzel.lower()), None)
-                        projekt = treffer or projekt or {"name": p_kuerzel, "kuerzel": p_kuerzel}
-                    ki = True
-                except Exception as e:  # noqa: BLE001
-                    print(f"  Stufe-2-Fehler bei '{betreff[:40]}': {e}")
-
-            relevant = kategorie != "Info"
-            projekt_anzeige = ("(Projekt prüfen)" if (relevant and not projekt)
-                               else ((projekt or {}).get("name", "—") if projekt else "—"))
-            zeilen.append({
-                "kuerzel": (projekt or {}).get("kuerzel", "") if projekt else "",
-                "projekt": projekt_anzeige,
-                "kategorie": kategorie,
-                "absender": absender or "(unbekannt)",
-                "betreff": betreff,
-                "eingang": received.strftime("%d.%m.%Y %H:%M"),
-                "gruppe": DRINGLICHKEIT.get(kategorie, "Niedrig"),
-                "ki": ki, "_relevant": relevant, "_item": item,
-                "_received": received, "_entry_id": entry_id,
-            })
-            if received > neue_max:
-                neue_max = received
+            ordner = outlook_ordner(fid)
         except Exception as e:  # noqa: BLE001
-            print(f"  Übersprungen (Lesefehler): {e}")
-        item = items.GetNext()
+            print(f"  Ordner {richtung} nicht verfügbar: {e}")
+            continue
+        items = ordner.Items
+        try:
+            items.Sort("[SentOn]" if richtung == "Gesendet" else "[ReceivedTime]", True)
+        except Exception:
+            items.Sort("[ReceivedTime]", True)
+
+        item = items.GetFirst()
+        while item is not None:
+            if max_n and geprueft >= max_n:
+                break
+            try:
+                if int(getattr(item, "Class", 0)) != 43:   # 43 = olMail
+                    item = items.GetNext(); continue
+                if richtung == "Gesendet":
+                    zeit = py_datetime(getattr(item, "SentOn", None) or item.ReceivedTime)
+                else:
+                    zeit = py_datetime(item.ReceivedTime)
+                if zeit <= marker:
+                    break
+                entry_id = item.EntryID
+                if entry_id in verarbeitet:
+                    item = items.GetNext(); continue
+                geprueft += 1
+
+                betreff = item.Subject or ""
+                if richtung == "Gesendet":
+                    anzeige, domain = empfaenger_info(item)
+                    anzeige = "An: " + anzeige
+                else:
+                    anzeige = smtp_adresse(item)
+                    domain = anzeige.split("@")[-1] if "@" in anzeige else ""
+                try:
+                    auszug = (item.Body or "")[:800]
+                except Exception:
+                    auszug = ""
+
+                projekt, _ = finde_projekt(mapping, domain, betreff)
+                kategorie = finde_kategorie(betreff, auszug)
+                eindeutig = projekt is not None and kategorie != "Info"
+                ki = False
+                if not eindeutig and ctx["use_api"]:
+                    try:
+                        meta = {"absender": anzeige, "betreff": betreff, "auszug": auszug}
+                        p_kuerzel, k = klassifiziere_stufe2(meta, ctx["api_key"], ctx["projektnamen"])
+                        if k in KATEGORIEN:
+                            kategorie = k
+                        if p_kuerzel:
+                            treffer = next((p for p in mapping["projekte"]
+                                            if p.get("kuerzel", "").lower() == p_kuerzel.lower()
+                                            or p.get("name", "").lower() == p_kuerzel.lower()), None)
+                            projekt = treffer or projekt or {"name": p_kuerzel, "kuerzel": p_kuerzel}
+                        ki = True
+                    except Exception as e:  # noqa: BLE001
+                        print(f"  Stufe-2-Fehler bei '{betreff[:40]}': {e}")
+
+                relevant = kategorie != "Info"
+                projekt_anzeige = ("(Projekt prüfen)" if (relevant and not projekt)
+                                   else ((projekt or {}).get("name", "—") if projekt else "—"))
+                zeilen.append({
+                    "kuerzel": (projekt or {}).get("kuerzel", "") if projekt else "",
+                    "projekt": projekt_anzeige,
+                    "kategorie": kategorie,
+                    "richtung": richtung,
+                    "absender": anzeige or "(unbekannt)",
+                    "betreff": betreff,
+                    "eingang": zeit.strftime("%d.%m.%Y %H:%M"),
+                    "gruppe": DRINGLICHKEIT.get(kategorie, "Niedrig"),
+                    "ki": ki, "_relevant": relevant, "_item": item,
+                    "_received": zeit, "_entry_id": entry_id,
+                })
+                if zeit > neue_max:
+                    neue_max = zeit
+            except Exception as e:  # noqa: BLE001
+                print(f"  Übersprungen (Lesefehler): {e}")
+            item = items.GetNext()
     return zeilen, neue_max
 
 

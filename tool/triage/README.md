@@ -1,11 +1,11 @@
 # KPC Posteingangs-Triage (Outlook, Windows)
 
-Liest den Outlook-Posteingang **read-only**, klassifiziert eingehende Mails und
-übergibt **alle** Mails als `.msg` an den Dokumentenbenennungs-Skill (auch
-interne/Info-Mails – es wird **alles** umbenannt). Die Ablage/Benennung
-(Mailtext-PDF + Anhänge, Projekt-Unterordner) macht weiterhin der Skill – die
-Triage baut das **nicht** doppelt. Die Klassifizierung dient der Übersicht
-(Dringlichkeit/Projekt).
+Liest den Outlook-**Posteingang** und (optional) die **Gesendeten Elemente**
+**read-only**, klassifiziert die Mails und übergibt **alle** Mails als `.msg`
+an den Dokumentenbenennungs-Skill (auch interne/Info-Mails – es wird **alles**
+umbenannt). Die Ablage/Benennung (Mailtext-PDF + Anhänge, Projekt-Unterordner)
+macht weiterhin der Skill – die Triage baut das **nicht** doppelt. Die
+Klassifizierung dient der Übersicht (Dringlichkeit/Projekt/Richtung).
 
 ## Sicherheit
 - **Posteingang READ-ONLY:** kein Verschieben, Löschen oder Als-gelesen-markieren.
@@ -62,6 +62,8 @@ python triage.py --stufe2            # Stufe-2-API erzwingen (sonst aus .env)
   - `base_dir` – Projektbasis (Default `C:\Users\ziegler\Desktop\Dokumentenumbenennung`)
   - `eingang_unterordner` – Übergabeordner an den Skill (Default `00_Posteingang`)
   - `bericht_unterordner` – Ablage der HTML-Übersichten (Default `Triage-Berichte`)
+  - `gesendete_einbeziehen` – auch die Gesendeten Elemente lesen (Default `true`;
+    auf `false` setzen, wenn nur der Posteingang gewünscht ist)
 - `projekte_mapping.json` – Projektname, Kürzel, Absender-Domains, Betreff-Stichworte.
   Neue Projekt-Unterordner unter `base_dir` werden beim Lauf automatisch ergänzt
   (mit leeren Domains/Stichworten) – Feinpflege machst du selbst.
@@ -75,8 +77,8 @@ python triage.py --stufe2            # Stufe-2-API erzwingen (sonst aus .env)
 
 ## Ausgabe
 - **HTML-Übersicht** (KPC-Design, A4 quer) unter `Triage-Berichte/`, gruppiert nach
-  Dringlichkeit (Hoch/Mittel/Niedrig/Unklar), mit Projekt, Kategorie, Absender,
-  Betreff, Eingang.
+  Dringlichkeit (Hoch/Mittel/Niedrig), mit Richtung (Eingang/Gesendet), Projekt,
+  Kategorie, Absender/Empfänger, Betreff, Datum.
 - **`.msg`** **aller** Mails im Eingangsordner des Skills – von dort übernimmt
   der Dokumentenbenennungs-Skill (Mailtext-PDF + Anhänge, VA-Benennung).
 

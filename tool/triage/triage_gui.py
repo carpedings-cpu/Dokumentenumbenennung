@@ -45,12 +45,14 @@ class AuswahlFenster:
 
         rahmen = ttk.Frame(root, padding=(8, 0))
         rahmen.pack(fill="both", expand=True)
-        cols = ("sel", "dringlichkeit", "projekt", "kategorie", "absender", "betreff", "eingang")
+        cols = ("sel", "dringlichkeit", "richtung", "projekt", "kategorie",
+                "absender", "betreff", "eingang")
         self.tree = ttk.Treeview(rahmen, columns=cols, show="headings", height=20)
         for c, t, w in (("sel", "✓", 40), ("dringlichkeit", "Dringl.", 70),
-                        ("projekt", "Projekt", 170), ("kategorie", "Kategorie", 160),
-                        ("absender", "Absender", 200), ("betreff", "Betreff", 320),
-                        ("eingang", "Eingang", 120)):
+                        ("richtung", "Richtung", 80),
+                        ("projekt", "Projekt", 160), ("kategorie", "Kategorie", 150),
+                        ("absender", "Absender/Empfänger", 200), ("betreff", "Betreff", 300),
+                        ("eingang", "Datum", 120)):
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w, anchor="w")
         sb = ttk.Scrollbar(rahmen, orient="vertical", command=self.tree.yview)
@@ -62,7 +64,7 @@ class AuswahlFenster:
         for z in zeilen:
             vorab = bool(z.get("_relevant"))   # Wichtige sind vorausgewählt
             iid = self.tree.insert("", "end", values=(
-                "☑" if vorab else "☐", z["gruppe"],
+                "☑" if vorab else "☐", z["gruppe"], z.get("richtung", "Eingang"),
                 (str(z["kuerzel"]) + " " + str(z["projekt"])).strip(),
                 z["kategorie"] + (" (KI)" if z.get("ki") else ""),
                 z["absender"], z["betreff"], z["eingang"]))
