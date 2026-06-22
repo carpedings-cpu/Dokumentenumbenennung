@@ -393,7 +393,155 @@ def baue_html(zeilen, scharf):
 
 
 # ---------------------------------------------------------------------------
-# Hauptlauf
+# Wiederverwendbare Bausteine (von CLI und Auswahl-Fenster genutzt)
+# ---------------------------------------------------------------------------
+def vorbereiten(heute=False, seit=None, stufe2=False):
+    """Liest Konfiguration, .env, Mapping und Marker; gibt einen Kontext zurück."""
+    cfg = lade_config()
+    env = lade_env(os.path.join(HIER, ".env"))
+    use_api = stufe2 or str(env.get("TRIAGE_USE_API", "")).lower() in ("1", "true", "ja", "yes")
+    api_key = env.get("ANTHROPIC_API_KEY", "").strip()
+    if use_api and not api_key:
+        print("HINWEIS: Stufe 2 aktiv, aber kein ANTHROPIC_API_KEY in .env – Stufe 2 aus.")
+        use_api = False
+    mapping = aktualisiere_projekte_aus_ordnern(lade_mapping(), cfg)
+    projektnamen = [f"{p.get('kuerzel','')} – {p.get('name','')}" for p in mapping["projekte"]]
+    state = lade_state()
+    heute_anfang = dt.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    if heute:
+        marker = heute_anfang
+    elif seit:
+        marker = dt.datetime.strptime(seit, "%Y-%m-%d")
+    elif state.get("letzte_received"):
+        marker = dt.datetime.fromisoformat(state["letzte_received"])
+    else:
+        marker = heute_anfang
+    return {
+        "cfg": cfg,
+        "eingang": os.path.join(cfg["base_dir"], cfg["eingang_unterordner"]),
+        "bericht_dir": os.path.join(cfg["base_dir"], cfg["bericht_unterordner"]),
+        "mapping": mapping, "projektnamen": projektnamen, "state": state,
+        "marker": marker, "verarbeitet": set(state.get("verarbeitete_entry_ids", [])),
+        "use_api": use_api, "api_key": api_key,
+    }
+
+
+def sammle_mails(ctx, max_n=0):
+    """Liest den Posteingang READ-ONLY und klassifiziert; gibt (zeilen, neue_max)."""
+    posteingang = outlook_posteingang()
+    items = posteingang.Items
+    items.Sort("[ReceivedTime]", True)   # neueste zuerst
+    marker = ctx["marker"]
+    verarbeitet = ctx["verarbeitet"]
+    mapping = ctx["mapping"]
+    zeilen, neue_max, geprueft = [], marker, 0
+
+    item = items.GetFirst()
+    while item is not None:
+        if max_n and geprueft >= max_n:
+            break
+        try:
+            if int(getattr(item, "Class", 0)) != 43:   # 43 = olMail
+                item = items.GetNext(); continue
+            received = py_datetime(item.ReceivedTime)
+            if received <= marker:
+                break
+            entry_id = item.EntryID
+            if entry_id in verarbeitet:
+                item = items.GetNext(); continue
+            geprueft += 1
+
+            betreff = item.Subject or ""
+            absender = smtp_adresse(item)
+            domain = absender.split("@")[-1] if "@" in absender else ""
+            try:
+                auszug = (item.Body or "")[:800]
+            except Exception:
+                auszug = ""
+
+            projekt, _ = finde_projekt(mapping, domain, betreff)
+            kategorie = finde_kategorie(betreff, auszug)
+            eindeutig = projekt is not None and kategorie != "Info"
+            ki = False
+            if not eindeutig and ctx["use_api"]:
+                try:
+                    meta = {"absender": absender, "betreff": betreff, "auszug": auszug}
+                    p_kuerzel, k = klassifiziere_stufe2(meta, ctx["api_key"], ctx["projektnamen"])
+                    if k in KATEGORIEN:
+                        kategorie = k
+                    if p_kuerzel:
+                        treffer = next((p for p in mapping["projekte"]
+                                        if p.get("kuerzel", "").lower() == p_kuerzel.lower()
+                                        or p.get("name", "").lower() == p_kuerzel.lower()), None)
+                        projekt = treffer or projekt or {"name": p_kuerzel, "kuerzel": p_kuerzel}
+                    ki = True
+                except Exception as e:  # noqa: BLE001
+                    print(f"  Stufe-2-Fehler bei '{betreff[:40]}': {e}")
+
+            relevant = kategorie != "Info"
+            projekt_anzeige = ("(Projekt prüfen)" if (relevant and not projekt)
+                               else ((projekt or {}).get("name", "—") if projekt else "—"))
+            zeilen.append({
+                "kuerzel": (projekt or {}).get("kuerzel", "") if projekt else "",
+                "projekt": projekt_anzeige,
+                "kategorie": kategorie,
+                "absender": absender or "(unbekannt)",
+                "betreff": betreff,
+                "eingang": received.strftime("%d.%m.%Y %H:%M"),
+                "gruppe": DRINGLICHKEIT.get(kategorie, "Niedrig"),
+                "ki": ki, "_relevant": relevant, "_item": item,
+                "_received": received, "_entry_id": entry_id,
+            })
+            if received > neue_max:
+                neue_max = received
+        except Exception as e:  # noqa: BLE001
+            print(f"  Übersprungen (Lesefehler): {e}")
+        item = items.GetNext()
+    return zeilen, neue_max
+
+
+def exportiere(zeilen, eingang, mit_kategorie, cfg):
+    """Legt die übergebenen Mails als .msg im Eingangsordner ab (read-only Export)."""
+    os.makedirs(eingang, exist_ok=True)
+    n = 0
+    for z in zeilen:
+        try:
+            stamm = f"{z['_received']:%y%m%d}_{z['kuerzel'] or 'X'}_{sicherer_name(z['betreff'])}"
+            ziel = os.path.join(eingang, stamm + ".msg")
+            i = 2
+            while os.path.exists(ziel):
+                ziel = os.path.join(eingang, f"{stamm}-{i:02d}.msg")
+                i += 1
+            z["_item"].SaveAs(ziel, 9)   # 9 = olMSGUnicode
+            n += 1
+            if mit_kategorie:
+                kat = cfg["outlook_kategorie"]
+                vorhandene = z["_item"].Categories or ""
+                if kat not in vorhandene:
+                    z["_item"].Categories = (vorhandene + ";" + kat).strip(";")
+                    z["_item"].Save()    # einzige erlaubte, reversible Schreibaktion
+        except Exception as e:  # noqa: BLE001
+            print(f"  Export-Fehler '{z['betreff'][:40]}': {e}")
+    return n
+
+
+def marker_weiterstellen(ctx, neue_max, zeilen):
+    state = ctx["state"]
+    state["letzte_received"] = neue_max.isoformat()
+    state["verarbeitete_entry_ids"] = list(ctx["verarbeitet"] | {z["_entry_id"] for z in zeilen})
+    speichere_state(state)
+
+
+def schreibe_bericht(zeilen, bericht_dir, scharf):
+    os.makedirs(bericht_dir, exist_ok=True)
+    pfad = os.path.join(bericht_dir, f"Triage_{dt.datetime.now():%Y%m%d_%H%M}.html")
+    with open(pfad, "w", encoding="utf-8") as f:
+        f.write(baue_html(zeilen, scharf))
+    return pfad
+
+
+# ---------------------------------------------------------------------------
+# Hauptlauf (Kommandozeile)
 # ---------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser(description="KPC Posteingangs-Triage (read-only).")
@@ -410,164 +558,29 @@ def main():
     ap.add_argument("--max", type=int, default=0, help="Maximale Anzahl Mails (Debug).")
     args = ap.parse_args()
 
-    cfg = lade_config()
-    env = lade_env(os.path.join(HIER, ".env"))
-    use_api = args.stufe2 or str(env.get("TRIAGE_USE_API", "")).lower() in ("1", "true", "ja", "yes")
-    api_key = env.get("ANTHROPIC_API_KEY", "").strip()
-    if use_api and not api_key:
-        print("HINWEIS: Stufe 2 aktiv, aber kein ANTHROPIC_API_KEY in .env – Stufe 2 wird übersprungen.")
-        use_api = False
-
-    base = cfg["base_dir"]
-    eingang = os.path.join(base, cfg["eingang_unterordner"])
-    bericht_dir = os.path.join(base, cfg["bericht_unterordner"])
-
-    mapping = aktualisiere_projekte_aus_ordnern(lade_mapping(), cfg)
-    projektnamen = [f"{p.get('kuerzel','')} – {p.get('name','')}" for p in mapping["projekte"]]
-
-    heute_anfang = dt.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    state = lade_state()
+    ctx = vorbereiten(heute=args.heute, seit=args.seit, stufe2=args.stufe2)
     if args.heute:
-        marker = heute_anfang
-        print("--heute: betrachte alle heutigen Mails erneut (Marker wird nicht genutzt).")
-    elif args.seit:
-        marker = dt.datetime.strptime(args.seit, "%Y-%m-%d")
-    elif state.get("letzte_received"):
-        marker = dt.datetime.fromisoformat(state["letzte_received"])
-    else:
-        # Erster Lauf: erst AB HEUTE beginnen (keine alten Mails einsammeln).
-        marker = dt.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        print(f"Erster Lauf: betrachte nur Mails ab heute ({marker:%d.%m.%Y}).")
-    verarbeitet = set(state.get("verarbeitete_entry_ids", []))
-
+        print("--heute: betrachte alle heutigen Mails erneut.")
     print(f"Modus: {'SCHARF' if args.scharf else 'TROCKENLAUF'} | "
-          f"Stufe 2 (API): {'AN' if use_api else 'AUS'} | ab {marker:%d.%m.%Y %H:%M}")
+          f"Stufe 2 (API): {'AN' if ctx['use_api'] else 'AUS'} | "
+          f"ab {ctx['marker']:%d.%m.%Y %H:%M}")
 
-    posteingang = outlook_posteingang()
-    items = posteingang.Items
-    items.Sort("[ReceivedTime]", True)   # absteigend (neueste zuerst)
+    zeilen, neue_max = sammle_mails(ctx, max_n=args.max)
 
-    zeilen = []
-    neue_max_received = marker
-    n_export = 0
-    geprueft = 0
-
-    item = items.GetFirst()
-    while item is not None:
-        if args.max and geprueft >= args.max:
-            break
-        try:
-            if int(getattr(item, "Class", 0)) != 43:   # 43 = olMail
-                item = items.GetNext(); continue
-            received = py_datetime(item.ReceivedTime)
-            if received <= marker:
-                break                                    # ab hier nur Älteres
-            entry_id = item.EntryID
-            if entry_id in verarbeitet:
-                item = items.GetNext(); continue
-            geprueft += 1
-
-            betreff = item.Subject or ""
-            absender_smtp = smtp_adresse(item)
-            domain = absender_smtp.split("@")[-1] if "@" in absender_smtp else ""
-            try:
-                auszug = (item.Body or "")[:800]
-            except Exception:
-                auszug = ""
-
-            # --- Stufe 1: lokal/regelbasiert ---
-            projekt, score = finde_projekt(mapping, domain, betreff)
-            kategorie = finde_kategorie(betreff, auszug)
-            eindeutig = projekt is not None and kategorie != "Info"
-            ki = False
-
-            # --- Stufe 2: nur wenn lokal NICHT eindeutig ---
-            if not eindeutig and use_api:
-                try:
-                    meta = {"absender": absender_smtp, "betreff": betreff, "auszug": auszug}
-                    p_kuerzel, k = klassifiziere_stufe2(meta, api_key, projektnamen)
-                    if k in KATEGORIEN:
-                        kategorie = k
-                    if p_kuerzel:
-                        treffer = next((p for p in mapping["projekte"]
-                                        if p.get("kuerzel", "").lower() == p_kuerzel.lower()
-                                        or p.get("name", "").lower() == p_kuerzel.lower()), None)
-                        projekt = treffer or projekt or {"name": p_kuerzel, "kuerzel": p_kuerzel}
-                    eindeutig = projekt is not None and kategorie != "Info"
-                    ki = True
-                except Exception as e:  # noqa: BLE001
-                    print(f"  Stufe-2-Fehler bei '{betreff[:40]}': {e}")
-
-            relevant = kategorie != "Info"
-            gruppe = DRINGLICHKEIT.get(kategorie, "Niedrig")   # rein nach Dringlichkeit
-            if relevant and not projekt:
-                projekt_anzeige = "(Projekt prüfen)"
-            else:
-                projekt_anzeige = (projekt or {}).get("name", "—") if projekt else "—"
-
-            zeilen.append({
-                "kuerzel": (projekt or {}).get("kuerzel", "") if projekt else "",
-                "projekt": projekt_anzeige,
-                "kategorie": kategorie,
-                "absender": absender_smtp or "(unbekannt)",
-                "betreff": betreff,
-                "eingang": received.strftime("%d.%m.%Y %H:%M"),
-                "gruppe": gruppe,
-                "ki": ki,
-                "_relevant": relevant,
-                "_item": item,
-                "_received": received,
-                "_entry_id": entry_id,
-            })
-            if received > neue_max_received:
-                neue_max_received = received
-        except Exception as e:  # noqa: BLE001
-            print(f"  Übersprungen (Lesefehler): {e}")
-        item = items.GetNext()
-
-    # --- Übersicht schreiben (immer) ---
-    os.makedirs(bericht_dir, exist_ok=True)
-    bericht = os.path.join(bericht_dir,
-                           f"Triage_{dt.datetime.now():%Y%m%d_%H%M}.html")
-    with open(bericht, "w", encoding="utf-8") as f:
-        f.write(baue_html(zeilen, args.scharf))
+    bericht = schreibe_bericht(zeilen, ctx["bericht_dir"], args.scharf)
     print(f"\nÜbersicht: {bericht}  ({len(zeilen)} Mail(s))")
     try:
-        os.startfile(bericht)   # noqa: PERF203  (nur Windows)
+        os.startfile(bericht)   # nur Windows
     except Exception:
         pass
 
-    # --- Ablage nur im scharfen Lauf: ALLE Mails uebergeben (alles umbenennen) ---
     if args.scharf:
-        os.makedirs(eingang, exist_ok=True)
-        for z in zeilen:
-            try:
-                stamm = f"{z['_received']:%y%m%d}_{z['kuerzel'] or 'X'}_{sicherer_name(z['betreff'])}"
-                ziel = os.path.join(eingang, stamm + ".msg")
-                i = 2
-                while os.path.exists(ziel):
-                    ziel = os.path.join(eingang, f"{stamm}-{i:02d}.msg")
-                    i += 1
-                z["_item"].SaveAs(ziel, 9)   # 9 = olMSGUnicode (Export, read-only)
-                n_export += 1
-                if args.mit_kategorie:
-                    kat = cfg["outlook_kategorie"]
-                    vorhandene = z["_item"].Categories or ""
-                    if kat not in vorhandene:
-                        z["_item"].Categories = (vorhandene + ";" + kat).strip(";")
-                        z["_item"].Save()    # einzige erlaubte, reversible Schreibaktion
-            except Exception as e:  # noqa: BLE001
-                print(f"  Export-Fehler '{z['betreff'][:40]}': {e}")
-        # Marker nur im scharfen Lauf weiterstellen
-        state["letzte_received"] = neue_max_received.isoformat()
-        state["verarbeitete_entry_ids"] = list(verarbeitet | {z["_entry_id"] for z in zeilen})
-        speichere_state(state)
-        print(f"Scharf: {n_export} Mail(s) als .msg nach {eingang} gelegt "
-              "(der Dokumentenbenennungs-Skill extrahiert/benennt sie). "
-              "Marker weitergestellt.")
+        n = exportiere(zeilen, ctx["eingang"], args.mit_kategorie, ctx["cfg"])
+        marker_weiterstellen(ctx, neue_max, zeilen)
+        print(f"Scharf: {n} Mail(s) als .msg nach {ctx['eingang']} gelegt "
+              "(der Dokumentenbenennungs-Skill extrahiert/benennt sie). Marker weitergestellt.")
     else:
-        print("Trockenlauf: nichts abgelegt, Marker unverändert. "
-              "Mit --scharf scharf schalten.")
+        print("Trockenlauf: nichts abgelegt, Marker unverändert. Mit --scharf scharf schalten.")
 
 
 if __name__ == "__main__":

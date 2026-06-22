@@ -26,13 +26,18 @@ Outlook muss installiert und mit dem Konto eingerichtet sein (Desktop-Outlook,
 nicht „neues Outlook"/Store-App – die hat kein COM).
 
 ## Ganz einfach: zum Doppelklicken (kein Tippen nötig)
-Im Ordner `tool/triage/` liegen drei Dateien:
+Im Ordner `tool/triage/` liegen diese Dateien:
 
 1. **`0_Einrichten.bat`** – einmal doppelklicken (installiert die nötigen Teile).
-2. **`1_Probelauf.bat`** – Probelauf: schaut nur und öffnet die Übersicht,
-   legt **nichts** ab und verändert **nichts**.
-3. **`2_Scharf_schalten.bat`** – legt die wichtigen Mails wirklich ins
-   Eingangs-Körbchen (fragt vorher zur Sicherheit nach).
+2. **`3_Mails_auswaehlen.bat`** – **empfohlen:** öffnet eine **Liste mit Häkchen**.
+   Du hakst die Mails an, die umbenannt werden sollen → „Ausgewählte ablegen".
+   Nur diese gehen ins Körbchen. (`3b_Heute_auswaehlen.bat` zeigt die heutigen
+   erneut.)
+3. **`1_Probelauf.bat`** – nur Übersicht ansehen, nichts ablegen.
+   **`2_Scharf_schalten.bat`** – legt **alle** neuen Mails ohne Nachfrage ab
+   (Variante ohne Auswahl).
+4. **`9_Aktualisieren.bat`** – holt die neueste Version (ersetzt nur die
+   Programmdateien, deine eigenen Dateien bleiben).
 
 > Beim ersten Doppelklick warnt Windows evtl. („Geschützt") → „Weitere
 > Informationen" → „Trotzdem ausführen".
