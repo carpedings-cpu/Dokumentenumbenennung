@@ -76,10 +76,17 @@ passenden **Projektordner** unter der **Projektbasis**.
   steht dort `—` (unklar/mehrdeutig), trägst du im Feld **„Projektordner
   (Ablage)"** den richtigen Ordnernamen ein und klickst **Vorschau
   aktualisieren**.
-- **Sicher:** Einsortiert wird **nur** in einen Ordner, der unter der
-  Projektbasis bereits existiert. Wird kein eindeutiges Projekt erkannt, bleibt
-  die Datei einfach im Ausgangsordner liegen (sie wird trotzdem umbenannt).
-  Haken aus = nur umbenennen, nicht verschieben.
+- **Fehlende Ordner anlegen:** Ist der zweite Haken **„fehlende Projektordner
+  anlegen"** gesetzt (Standard: an), legt das Programm den Projektordner
+  automatisch an, wenn ein Projekt eindeutig erkannt wird, aber noch kein Ordner
+  existiert. Der Name kommt dann aus deiner Projektliste (`projekte_mapping.json`).
+  Existiert bereits ein passender Ordner (auch unter anderem Namen, z. B.
+  „Adina-Frankfurt" statt „1072.20 …"), wird **dieser** verwendet – es entstehen
+  keine Doppel-Ordner.
+- **Sicher:** Wird kein eindeutiges Projekt erkannt, bleibt die Datei einfach im
+  Ausgangsordner liegen (sie wird trotzdem umbenannt). Haken „einsortieren" aus =
+  nur umbenennen, nicht verschieben; Haken „anlegen" aus = nur in **vorhandene**
+  Ordner einsortieren.
 
 > Drag & Drop nutzt das Paket `tkinterdnd2`; in der `.exe` ist es bereits
 > enthalten. Beim Start aus dem Quellcode ggf. `pip install tkinterdnd2`

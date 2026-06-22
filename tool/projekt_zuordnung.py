@@ -76,34 +76,60 @@ def _lade_mapping(base_dir, hier):
 
 
 def lade_projekte(base_dir, hier=None):
-    """Baut die Projektliste aus den realen Unterordnern (+ Mapping-Stichworten)."""
-    projekte = []
-    by_key = {}
-    if base_dir and os.path.isdir(base_dir):
-        for name in sorted(os.listdir(base_dir)):
-            pfad = os.path.join(base_dir, name)
-            if not os.path.isdir(pfad) or name.startswith(".") or name.lower() in _IGNORIERT:
-                continue
-            nummer = _nummer(name)
-            rec = {"ordner": name, "nummer": nummer, "keywords": _keywords_aus_name(name)}
-            projekte.append(rec)
-            by_key[nummer or name.lower()] = rec
+    """Projektliste aus der Mapping-Liste UND den realen Ordnern.
 
-    # Stichworte/Domains aus dem Mapping anreichern – nur fuer existierende Ordner.
+    Projekte kommen primär aus projekte_mapping.json (die vom Nutzer gepflegte
+    Liste) – so werden Projekte auch erkannt, wenn der Ordner noch gar nicht
+    existiert. Vorhandene Projektordner werden per Stichwort-Treffer mit dem
+    passenden Mapping-Projekt verknüpft (dann wird in den vorhandenen Ordner
+    einsortiert, auch wenn er anders heißt). Hat ein Projekt noch keinen Ordner,
+    trägt es seinen kanonischen Namen aus der Liste – darunter wird er bei Bedarf
+    angelegt. Jeder Datensatz hat 'ordner' (Zielname) und 'vorhanden' (bool).
+    """
+    projekte = {}
     for e in _lade_mapping(base_dir, hier):
-        key = _ziffern(e.get("kuerzel", "")) or _nummer(e.get("name", ""))
-        rec = by_key.get(key) or by_key.get((e.get("name", "") or "").lower())
-        if not rec:
+        nummer = _ziffern(e.get("kuerzel", "")) or _nummer(e.get("name", ""))
+        key = nummer or (e.get("name", "") or "").strip().lower()
+        if not key:
             continue
+        rec = projekte.setdefault(key, {
+            "nummer": nummer,
+            "ordner": (e.get("ordner") or e.get("name") or "").strip(),
+            "vorhanden": False,
+            "keywords": set(),
+        })
+        rec["keywords"] |= _keywords_aus_name(e.get("name", ""))
         for kw in e.get("betreff_stichworte", []):
             kw = (kw or "").strip().lower()
-            if (len(kw) >= 3 and not kw.isdigit()) or kw == rec["nummer"]:
+            if (len(kw) >= 3 and not kw.isdigit()) or kw == nummer:
                 rec["keywords"].add(kw)
         for d in e.get("domains", []):
             d = (d or "").strip().lower()
             if len(d) >= 3:
                 rec["keywords"].add(d)
-    return projekte
+        if nummer:
+            rec["keywords"].add(nummer)
+
+    liste = list(projekte.values())
+
+    # Vorhandene Ordner dem passenden Mapping-Projekt zuordnen (oder eigenständig).
+    if base_dir and os.path.isdir(base_dir):
+        for name in sorted(os.listdir(base_dir)):
+            pfad = os.path.join(base_dir, name)
+            if not os.path.isdir(pfad) or name.startswith(".") or name.lower() in _IGNORIERT:
+                continue
+            treffer = finde_projekt(liste, name)
+            if treffer is not None:
+                treffer["ordner"] = name        # vorhandenen Ordner bevorzugen
+                treffer["vorhanden"] = True
+                treffer["keywords"] |= _keywords_aus_name(name)
+            else:
+                neu = {"nummer": _nummer(name), "ordner": name,
+                       "vorhanden": True, "keywords": _keywords_aus_name(name)}
+                if neu["nummer"]:
+                    neu["keywords"].add(neu["nummer"])
+                liste.append(neu)
+    return [r for r in liste if r.get("ordner")]
 
 
 def finde_projekt(projekte, text):

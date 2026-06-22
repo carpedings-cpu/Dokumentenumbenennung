@@ -97,6 +97,7 @@ class App:
         self.modus = tk.StringVar(value="offline")
         self.api_key = tk.StringVar(value=os.environ.get("ANTHROPIC_API_KEY", ""))
         self.einsortieren = tk.BooleanVar(value=True)   # in Projektordner einsortieren
+        self.ordner_anlegen = tk.BooleanVar(value=True)  # fehlende Projektordner anlegen
         self.projektbasis = tk.StringVar(value=STANDARD_BASIS)
         self.rows = {}  # tree-item-id -> dict mit Feldern
         self._pz_base = None    # Cache: zuletzt geladene Projektbasis
@@ -149,10 +150,12 @@ class App:
 
         s = ttk.Frame(self.root, padding=(8, 2))
         s.pack(fill="x")
-        ttk.Checkbutton(s, text="Umbenannte Dateien in Projektordner einsortieren",
+        ttk.Checkbutton(s, text="In Projektordner einsortieren",
                         variable=self.einsortieren).pack(side="left")
+        ttk.Checkbutton(s, text="fehlende Projektordner anlegen",
+                        variable=self.ordner_anlegen).pack(side="left", padx=(8, 0))
         ttk.Label(s, text="Projektbasis:").pack(side="left", padx=(12, 2))
-        ttk.Entry(s, textvariable=self.projektbasis, width=48).pack(side="left", padx=2)
+        ttk.Entry(s, textvariable=self.projektbasis, width=44).pack(side="left", padx=2)
         ttk.Button(s, text="Durchsuchen…", command=self.waehle_basis).pack(side="left")
 
     def _baue_tabelle(self):
@@ -517,13 +520,21 @@ class App:
                                      felder.get("projekt", "") or "—", anzeige))
 
     def _zielordner(self, felder):
-        """Zielordner für eine Datei: Projektordner (falls einsortieren + erkannt
-        + existiert), sonst der Quellordner."""
+        """Zielordner für eine Datei: Projektordner (falls einsortieren + erkannt),
+        sonst der Quellordner. Fehlende Projektordner werden – falls aktiviert –
+        beim Verschieben angelegt."""
         if not self.einsortieren.get():
             return felder["_dir"]
         name = (felder.get("projekt") or "").strip()
-        ziel = PZ.projektordner(self.projektbasis.get().strip(), name)
-        return ziel or felder["_dir"]
+        base = self.projektbasis.get().strip()
+        if not name or not os.path.isdir(base):
+            return felder["_dir"]
+        ziel = os.path.join(base, name)
+        if os.path.isdir(ziel):
+            return ziel
+        if self.ordner_anlegen.get():
+            return ziel        # wird beim Verschieben per os.makedirs angelegt
+        return felder["_dir"]
 
     def umbenennen(self):
         if not self.rows:
@@ -574,7 +585,9 @@ class App:
             try:
                 quelle = os.path.join(src, alt)
                 if verschieben:
-                    os.makedirs(dst, exist_ok=True)
+                    if not os.path.isdir(dst):
+                        os.makedirs(dst, exist_ok=True)
+                        self.protokoll(f"  Projektordner neu angelegt: {os.path.basename(dst)}")
                     shutil.move(quelle, os.path.join(dst, neu))
                 else:
                     os.rename(quelle, os.path.join(dst, neu))
