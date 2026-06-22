@@ -186,7 +186,12 @@ def _text_zu_pdf(kopf, body, zielpfad):
 
 # ----------------------------------------------------------------- API
 def extrahiere(pfad):
-    """Zerlegt eine E-Mail; liefert die Liste der erzeugten Dateipfade."""
+    """Zerlegt eine E-Mail; liefert (erzeugte Dateipfade, Kontext-Text).
+
+    Der Kontext-Text (Betreff + Auszug) dient der Projekt-Zuordnung, damit alle
+    aus EINER Mail erzeugten Dateien (Mailtext-PDF + Anhänge) demselben Projekt
+    zugeordnet werden können.
+    """
     ordner = os.path.dirname(os.path.abspath(pfad))
     stem = os.path.splitext(os.path.basename(pfad))[0]
     endung = os.path.splitext(pfad)[1].lower()
@@ -196,7 +201,7 @@ def extrahiere(pfad):
     elif endung == ".msg":
         kopf, body, anhaenge = _msg_lesen(pfad)
     else:
-        return []
+        return [], ""
 
     erzeugt = []
     pdf_name = _freier_name(ordner, _sicherer_dateiname(stem) + "_Mailtext", ".pdf")
@@ -212,4 +217,7 @@ def extrahiere(pfad):
         with open(os.path.join(ordner, ziel), "wb") as f:
             f.write(data)
         erzeugt.append(os.path.join(ordner, ziel))
-    return erzeugt
+
+    kontext = (kopf.get("Betreff", "") + " " + (body or "")[:3000]).strip()
+    return erzeugt, kontext
+

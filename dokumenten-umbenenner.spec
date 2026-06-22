@@ -9,10 +9,15 @@ import os
 from PyInstaller.utils.hooks import collect_all
 
 # Die VA-Regeln (SKILL.md) werden in die .exe gebuendelt, damit der API-Modus
-# den Systemprompt auch ohne Quelldateien findet.
+# den Systemprompt auch ohne Quelldateien findet. Die Projektliste
+# (projekte_mapping.json) liefert Stichworte fuer die Projekt-Einsortierung.
 datas = [(os.path.join(".claude", "skills", "dokumentenumbenennung", "SKILL.md"), ".")]
+_mapping = os.path.join("tool", "triage", "projekte_mapping.json")
+if os.path.exists(_mapping):
+    datas.append((_mapping, "."))
 binaries = []
-hiddenimports = ["va_rules", "pdf_text", "api_client", "gemini_client", "email_extract"]
+hiddenimports = ["va_rules", "pdf_text", "api_client", "gemini_client",
+                 "email_extract", "projekt_zuordnung"]
 
 # Anthropic-SDK mitbuendeln, falls installiert (fuer den optionalen API-Modus).
 # Fehlt es, bleibt der Offline-Modus voll funktionsfaehig.

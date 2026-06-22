@@ -13,6 +13,7 @@ Start:  python dokumenten_umbenenner.py
 """
 
 import os
+import shutil
 import sys
 
 try:
@@ -37,10 +38,17 @@ if _HIER not in sys.path:
 
 import va_rules as VA            # noqa: E402
 import email_extract             # noqa: E402
+import projekt_zuordnung as PZ   # noqa: E402
 from pdf_text import extract_pdf_text  # noqa: E402
 
 LESBARE_TEXT_ENDUNGEN = {".pdf", ".txt", ".md"}
 ANALYSIERBAR = LESBARE_TEXT_ENDUNGEN | {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+# Standard-Projektbasis (enthaelt die Projekt-Unterordner). Identisch zur Triage;
+# im Programm aenderbar und wird automatisch korrigiert, wenn ein Ordner namens
+# "00_Posteingang" eingelesen wird (dann = dessen uebergeordneter Ordner).
+STANDARD_BASIS = r"C:\Users\ziegler\Desktop\Dokumentenumbenennung"
+EINGANG_ORDNER = "00_Posteingang"
 
 
 def lade_va_regeln():
@@ -76,7 +84,11 @@ class App:
         self.ordner = tk.StringVar()
         self.modus = tk.StringVar(value="offline")
         self.api_key = tk.StringVar(value=os.environ.get("ANTHROPIC_API_KEY", ""))
+        self.einsortieren = tk.BooleanVar(value=True)   # in Projektordner einsortieren
+        self.projektbasis = tk.StringVar(value=STANDARD_BASIS)
         self.rows = {}  # tree-item-id -> dict mit Feldern
+        self._pz_base = None    # Cache: zuletzt geladene Projektbasis
+        self._pz_cache = None   # Cache: Projektliste
 
         self._baue_oben()
         self._baue_tabelle()
@@ -123,6 +135,14 @@ class App:
         ttk.Label(m, text="API-Schlüssel:").pack(side="left")
         ttk.Entry(m, textvariable=self.api_key, width=32, show="•").pack(side="left", padx=4)
 
+        s = ttk.Frame(self.root, padding=(8, 2))
+        s.pack(fill="x")
+        ttk.Checkbutton(s, text="Umbenannte Dateien in Projektordner einsortieren",
+                        variable=self.einsortieren).pack(side="left")
+        ttk.Label(s, text="Projektbasis:").pack(side="left", padx=(12, 2))
+        ttk.Entry(s, textvariable=self.projektbasis, width=48).pack(side="left", padx=2)
+        ttk.Button(s, text="Durchsuchen…", command=self.waehle_basis).pack(side="left")
+
     def _baue_tabelle(self):
         hinweis = ("Reinziehen ODER 'Dateien wählen…' (auch .eml/.msg). E-Mails werden "
                    "in Mailtext-PDF + Anhänge zerlegt. Outlook-Mail ggf. erst als .msg "
@@ -132,10 +152,11 @@ class App:
 
         f = ttk.Frame(self.root, padding=8)
         f.pack(fill="both", expand=True)
-        cols = ("alt", "typ", "datum", "neu")
+        cols = ("alt", "typ", "datum", "projekt", "neu")
         self.tree = ttk.Treeview(f, columns=cols, show="headings", height=12)
-        for c, t, w in (("alt", "Alt (Ist)", 320), ("typ", "Typ", 150),
-                        ("datum", "Datum", 80), ("neu", "Neu (Vorschau)", 420)):
+        for c, t, w in (("alt", "Alt (Ist)", 300), ("typ", "Typ", 130),
+                        ("datum", "Datum", 70), ("projekt", "Projektordner", 200),
+                        ("neu", "Neu (Vorschau)", 360)):
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w, anchor="w")
         sb = ttk.Scrollbar(f, orient="vertical", command=self.tree.yview)
@@ -150,6 +171,7 @@ class App:
 
         self.var = {k: tk.StringVar() for k in (
             "datum", "quelle", "phase", "dokumententyp", "bezeichnung", "version",
+            "projekt",
             "projektnr", "auftragsart", "leistungsphase", "planinhalt",
             "geschoss", "plannr", "index", "status")}
         self.ist_plan = tk.BooleanVar(value=False)
@@ -166,6 +188,7 @@ class App:
         cb.grid(row=1, column=1, sticky="w", padx=4, pady=2)
         self._feld(std, "Bezeichnung", "bezeichnung", 1, 2, 24)
         self._feld(std, "Version", "version", 1, 4, 10)
+        self._feld(std, "Projektordner (Ablage)", "projekt", 2, 0, 40)
 
         ttk.Checkbutton(f, text="Planunterlage (eigenes Schema, Kapitel 6)",
                         variable=self.ist_plan,
@@ -211,6 +234,49 @@ class App:
         d = filedialog.askdirectory(title="Ordner mit Dokumenten wählen")
         if d:
             self.ordner.set(d)
+            self._basis_aus_eingang(d)
+
+    def waehle_basis(self):
+        d = filedialog.askdirectory(title="Projektbasis wählen (enthält die Projektordner)")
+        if d:
+            self.projektbasis.set(d)
+
+    def _basis_aus_eingang(self, ordnerpfad):
+        """Setzt die Projektbasis automatisch, wenn ein '00_Posteingang' eingelesen
+        wird – dann ist die Basis dessen übergeordneter Ordner. Eine bereits
+        gültige Basis wird nur überschrieben, wenn sie gar nicht existiert."""
+        try:
+            ordnerpfad = os.path.abspath(ordnerpfad)
+            if os.path.basename(ordnerpfad).lower() != EINGANG_ORDNER.lower():
+                return
+            eltern = os.path.dirname(ordnerpfad)
+            aktuell = self.projektbasis.get().strip()
+            if eltern and os.path.isdir(eltern) and not os.path.isdir(aktuell):
+                self.projektbasis.set(eltern)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _projekte(self):
+        """Lädt (und cached) die Projektliste der aktuellen Projektbasis."""
+        base = self.projektbasis.get().strip()
+        if base != self._pz_base or self._pz_cache is None:
+            self._pz_base = base
+            self._pz_cache = PZ.lade_projekte(base, _HIER)
+            if base and not os.path.isdir(base):
+                self.protokoll(f"Hinweis: Projektbasis nicht gefunden: {base} "
+                               "– es wird nichts einsortiert.")
+        return self._pz_cache
+
+    def _erkenne_projekt(self, name, kontext, felder):
+        """Bestimmt den Projektordner für eine Datei (oder '' wenn unklar)."""
+        if not self.einsortieren.get():
+            return ""
+        projekte = self._projekte()
+        if not projekte:
+            return ""
+        such = " ".join([name, kontext or "", felder.get("_text", "")])
+        rec = PZ.finde_projekt(projekte, such)
+        return rec["ordner"] if rec else ""
 
     def waehle_dateien(self):
         """Sicherer Weg ohne Drag & Drop: Dateien/E-Mails per Dialog auswählen."""
@@ -254,6 +320,7 @@ class App:
         if not d or not os.path.isdir(d):
             messagebox.showinfo("Hinweis", "Bitte zuerst einen gültigen Ordner wählen.")
             return
+        self._basis_aus_eingang(d)
         self._add_files([os.path.join(d, n) for n in self._dateien()], anhaengen=False)
 
     def on_drop(self, event):
@@ -281,27 +348,33 @@ class App:
         self._add_files(echte, anhaengen=True)
 
     def _emails_extrahieren(self, dateien):
-        """E-Mails (.eml/.msg) -> Mailtext-PDF + Anhaenge; sonst Datei unveraendert."""
+        """E-Mails (.eml/.msg) -> Mailtext-PDF + Anhaenge; sonst Datei unveraendert.
+
+        Liefert eine Liste von (pfad, kontext). Der Kontext (Betreff + Auszug +
+        E-Mail-Dateiname) erlaubt es, alle aus EINER Mail erzeugten Dateien
+        demselben Projekt zuzuordnen. Für Einzeldateien ist der Kontext leer.
+        """
         ergebnis = []
         for fp in dateien:
             if email_extract.ist_email(fp):
                 try:
-                    neu = email_extract.extrahiere(fp)
+                    neu, kontext = email_extract.extrahiere(fp)
+                    ktx = (os.path.basename(fp) + " " + (kontext or "")).strip()
                     if neu:
                         self.protokoll(f"E-Mail {os.path.basename(fp)} -> {len(neu)} Datei(en) "
                                        "extrahiert (Mailtext + Anhänge).")
-                        ergebnis += neu
+                        ergebnis += [(n, ktx) for n in neu]
                     else:
                         self.protokoll(f"  {os.path.basename(fp)}: nichts extrahierbar.")
                 except Exception as e:  # noqa: BLE001
                     self.protokoll(f"  E-Mail-Fehler bei {os.path.basename(fp)}: {e}")
             else:
-                ergebnis.append(fp)
+                ergebnis.append((fp, ""))
         return ergebnis
 
     def _add_files(self, pfade, anhaengen=True):
-        dateien = self._emails_extrahieren(self._expandiere(pfade))
-        if not dateien:
+        paare = self._emails_extrahieren(self._expandiere(pfade))
+        if not paare:
             messagebox.showinfo("Hinweis", "Keine Dateien gefunden.")
             return
         modus = self.modus.get()
@@ -314,19 +387,21 @@ class App:
         if not anhaengen:
             self._leeren()
         va_regeln = lade_va_regeln() if ist_api else None
-        self.protokoll(f"Lese {len(dateien)} Datei(en) – Modus: {modus} …")
-        for idx, fp in enumerate(dateien, 1):
+        self.protokoll(f"Lese {len(paare)} Datei(en) – Modus: {modus} …")
+        for idx, (fp, kontext) in enumerate(paare, 1):
             name = os.path.basename(fp)
-            self.status.set(f"Analysiere {idx}/{len(dateien)}: {name}")
+            self.status.set(f"Analysiere {idx}/{len(paare)}: {name}")
             self.root.update_idletasks()
             felder = self._analysiere(fp, name, modus, va_regeln)
+            felder["projekt"] = self._erkenne_projekt(name, kontext, felder)
             self._zeile_einfuegen(fp, felder)
-        self.status.set(f"Fertig: {len(dateien)} Datei(en). Felder pruefen, dann 'Alle umbenennen'.")
+        self.status.set(f"Fertig: {len(paare)} Datei(en). Felder pruefen, dann 'Alle umbenennen'.")
 
     def _analysiere(self, pfad, name, modus, va_regeln):
         endung = os.path.splitext(name)[1].lower()
         felder = {k: "" for k in self.var}
         felder["ist_plan"] = False
+        felder["_text"] = ""    # Textauszug für die Projekt-Zuordnung
 
         if modus in ("claude", "gemini"):
             try:
@@ -370,6 +445,7 @@ class App:
         if endung in (".pdf",) and not text:
             self.protokoll(f"  {name}: kein Text lesbar (Scan?) – Felder bitte manuell"
                            " ausfüllen oder API-Modus nutzen.")
+        felder["_text"] = (text or "")[:4000]
         felder["datum"] = VA.datum_aus_text(text)
         felder["dokumententyp"] = VA.typ_aus_text(text)
         if felder["dokumententyp"] in VA.TYPEN_OHNE_DATUM:
@@ -393,7 +469,8 @@ class App:
         neu_anzeige = (neu + ext) if neu else "(unvollständig)"
         item = self.tree.insert("", "end",
                                 values=(name, felder.get("dokumententyp", ""),
-                                        felder.get("datum", ""), neu_anzeige))
+                                        felder.get("datum", ""),
+                                        felder.get("projekt", "") or "—", neu_anzeige))
         self.rows[item] = felder
 
     def zeige_auswahl(self, _evt=None):
@@ -419,50 +496,85 @@ class App:
         anzeige = (neu + ext) if neu else "(unvollständig)"
         self.tree.item(item, values=(felder["_orig"],
                                      felder.get("dokumententyp", ""),
-                                     felder.get("datum", ""), anzeige))
+                                     felder.get("datum", ""),
+                                     felder.get("projekt", "") or "—", anzeige))
+
+    def _zielordner(self, felder):
+        """Zielordner für eine Datei: Projektordner (falls einsortieren + erkannt
+        + existiert), sonst der Quellordner."""
+        if not self.einsortieren.get():
+            return felder["_dir"]
+        name = (felder.get("projekt") or "").strip()
+        ziel = PZ.projektordner(self.projektbasis.get().strip(), name)
+        return ziel or felder["_dir"]
 
     def umbenennen(self):
         if not self.rows:
             return
         plan = []
-        belegt = {}  # Ordner -> Set bereits geplanter Namen (Kollisionsschutz)
+        belegt = {}  # Zielordner -> Set bereits geplanter Namen (Kollisionsschutz)
         for item, felder in self.rows.items():
             stamm = self._stamm(felder)
             if not stamm:
                 continue
-            d = felder["_dir"]
-            vorhandene = belegt.setdefault(d, set())
-            ziel = VA.eindeutiger_zielname(d, stamm, felder["_ext"],
-                                           felder["_orig"], vorhandene=vorhandene)
-            if ziel != felder["_orig"]:
-                plan.append((item, d, felder["_orig"], ziel))
-                vorhandene.add(ziel.lower())
+            src = felder["_dir"]
+            dst = self._zielordner(felder)
+            verschieben = os.path.normcase(os.path.abspath(dst)) != \
+                os.path.normcase(os.path.abspath(src))
+            vorhandene = belegt.setdefault(os.path.abspath(dst), set())
+            # Beim Verschieben den "keine Änderung"-Vergleich abschalten.
+            ref_name = "" if verschieben else felder["_orig"]
+            ziel = VA.eindeutiger_zielname(dst, stamm, felder["_ext"],
+                                           ref_name, vorhandene=vorhandene)
+            if not verschieben and ziel == felder["_orig"]:
+                continue
+            plan.append((item, src, felder["_orig"], dst, ziel, verschieben))
+            vorhandene.add(ziel.lower())
 
         if not plan:
             messagebox.showinfo("Nichts zu tun",
                                 "Keine Änderungen (Felder unvollständig oder Namen gleich).")
             return
 
-        vorschau = "\n".join(f"{alt}  →  {neu}" for _, _, alt, neu in plan[:25])
+        def zeile(alt, dst, neu, verschieben):
+            if verschieben:
+                return f"{alt}  →  {os.path.basename(dst)}\\{neu}"
+            return f"{alt}  →  {neu}"
+
+        vorschau = "\n".join(zeile(alt, dst, neu, v)
+                             for _, _, alt, dst, neu, v in plan[:25])
         if len(plan) > 25:
             vorschau += f"\n… und {len(plan) - 25} weitere"
-        if not messagebox.askyesno("Umbenennen bestätigen",
-                                    f"{len(plan)} Datei(en) umbenennen?\n\n{vorschau}"):
+        anzahl_verschoben = sum(1 for *_, v in plan if v)
+        kopf = f"{len(plan)} Datei(en) umbenennen"
+        if anzahl_verschoben:
+            kopf += f" (davon {anzahl_verschoben} in Projektordner einsortieren)"
+        if not messagebox.askyesno("Umbenennen bestätigen", f"{kopf}?\n\n{vorschau}"):
             return
 
         ok = 0
-        for item, d, alt, neu in plan:
+        for item, src, alt, dst, neu, verschieben in plan:
             try:
-                os.rename(os.path.join(d, alt), os.path.join(d, neu))
-                self.tree.item(item, values=(neu, self.rows[item].get("dokumententyp", ""),
-                                             self.rows[item].get("datum", ""), "✓ umbenannt"))
+                quelle = os.path.join(src, alt)
+                if verschieben:
+                    os.makedirs(dst, exist_ok=True)
+                    shutil.move(quelle, os.path.join(dst, neu))
+                else:
+                    os.rename(quelle, os.path.join(dst, neu))
                 self.rows[item]["_orig"] = neu
-                self.protokoll(f"{alt}  →  {neu}")
+                self.rows[item]["_dir"] = dst
+                hinweis = "✓ einsortiert" if verschieben else "✓ umbenannt"
+                self.tree.item(item, values=(neu, self.rows[item].get("dokumententyp", ""),
+                                             self.rows[item].get("datum", ""),
+                                             self.rows[item].get("projekt", "") or "—",
+                                             hinweis))
+                self.protokoll(zeile(alt, dst, neu, verschieben))
                 ok += 1
             except OSError as e:
                 self.protokoll(f"FEHLER bei {alt}: {e}")
-        self.status.set(f"{ok}/{len(plan)} Datei(en) umbenannt.")
-        messagebox.showinfo("Fertig", f"{ok} von {len(plan)} Datei(en) umbenannt.")
+        self.status.set(f"{ok}/{len(plan)} Datei(en) verarbeitet.")
+        messagebox.showinfo("Fertig", f"{ok} von {len(plan)} Datei(en) umbenannt"
+                            + (f", {anzahl_verschoben} in Projektordner einsortiert." if anzahl_verschoben else "."))
 
 
 def main():

@@ -57,6 +57,30 @@ Unter Windows genügt meist ein Doppelklick auf `dokumenten_umbenenner.py`.
    **Vorschau aktualisieren**. Für Pläne den Haken *„Planunterlage"* setzen.
 4. **Alle umbenennen** → Bestätigungsdialog → fertig.
 
+## Automatisch in Projektordner einsortieren
+
+Ist der Haken **„Umbenannte Dateien in Projektordner einsortieren"** gesetzt
+(Standard: an), legt das Programm jede Datei nach dem Umbenennen direkt in den
+passenden **Projektordner** unter der **Projektbasis**.
+
+- Die **Projektbasis** ist der Ordner, der die Projekt-Unterordner enthält
+  (Standard: `C:\Users\ziegler\Desktop\Dokumentenumbenennung`). Liest du den
+  Übergabeordner `00_Posteingang` ein, wird die Projektbasis automatisch auf
+  dessen übergeordneten Ordner gesetzt.
+- Das Projekt wird aus **Dateiname + Inhalt/Mailtext** erkannt – am stärksten
+  über die **Projektnummer** (z. B. `0875` / `0875.20`), sonst über Orts-/
+  Stichworte aus dem Ordnernamen bzw. aus `projekte_mapping.json`. Alle aus
+  **einer** E-Mail erzeugten Dateien (Mailtext-PDF + Anhänge) landen im selben
+  Projektordner.
+- Die Spalte **„Projektordner"** zeigt das erkannte Ziel. Stimmt es nicht oder
+  steht dort `—` (unklar/mehrdeutig), trägst du im Feld **„Projektordner
+  (Ablage)"** den richtigen Ordnernamen ein und klickst **Vorschau
+  aktualisieren**.
+- **Sicher:** Einsortiert wird **nur** in einen Ordner, der unter der
+  Projektbasis bereits existiert. Wird kein eindeutiges Projekt erkannt, bleibt
+  die Datei einfach im Ausgangsordner liegen (sie wird trotzdem umbenannt).
+  Haken aus = nur umbenennen, nicht verschieben.
+
 > Drag & Drop nutzt das Paket `tkinterdnd2`; in der `.exe` ist es bereits
 > enthalten. Beim Start aus dem Quellcode ggf. `pip install tkinterdnd2`
 > (ohne das Paket funktioniert weiterhin der Weg über „Ordner wählen").
@@ -105,6 +129,8 @@ braucht zusätzlich einen Schlüssel im Programm.
 | `dokumenten_umbenenner.py` | Programm mit Oberfläche (Start hier) |
 | `va_rules.py` | VA-Regeln: Typliste, Datums-/Namenslogik, Bereinigung |
 | `pdf_text.py` | PDF-Textextraktion ohne Zusatzpakete |
+| `email_extract.py` | E-Mail-Zerlegung (Mailtext-PDF + Anhänge) |
+| `projekt_zuordnung.py` | Projekt-Erkennung für die Einsortierung in Projektordner |
 | `api_client.py` | Optionaler Claude-API-Modus |
 
 > Die verbindlichen Regeln stehen zusätzlich in
