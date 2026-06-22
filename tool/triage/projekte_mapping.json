@@ -1,33 +1,43 @@
 {
-  "_hinweis": "Pflege diese Datei selbst. 'domains' = bekannte Absender-Domains (z. B. lieferant.de), 'betreff_stichworte' = Worte/Codes, die im Betreff auf dieses Projekt deuten (ganzwoertlich, daher sind auch kurze Codes wie HAN sicher). Neue Projekt-Unterordner unter base_dir werden beim Lauf automatisch ergaenzt.",
+  "_hinweis": "Aus den Projekt-Screenshots übernommen. 'betreff_stichworte' (Projektnummer + markante Worte) steuern die Zuordnung; 'domains' kannst du je Projekt mit den bekannten Absender-Domains ergänzen. Ganzwoertliche Treffer, daher sind auch Nummern sicher.",
   "projekte": [
-    {
-      "name": "JAF",
-      "kuerzel": "JAF",
-      "ordner": "",
-      "domains": [],
-      "betreff_stichworte": ["JAF"]
-    },
-    {
-      "name": "FOUR KLE",
-      "kuerzel": "FOURKLE",
-      "ordner": "",
-      "domains": [],
-      "betreff_stichworte": ["FOUR KLE"]
-    },
-    {
-      "name": "HAN",
-      "kuerzel": "HAN",
-      "ordner": "",
-      "domains": [],
-      "betreff_stichworte": ["HAN"]
-    },
-    {
-      "name": "(Beispiel) 1030 Musterstrasse",
-      "kuerzel": "1030",
-      "ordner": "1030_Musterstrasse",
-      "domains": ["kunde-beispiel.de"],
-      "betreff_stichworte": ["Musterstrasse", "1030"]
-    }
+    {"name": "0875.20 Frankfurt, DEKA FOUR", "kuerzel": "0875", "ordner": "", "domains": [], "betreff_stichworte": ["0875.20", "0875", "DEKA", "DEKA FOUR"]},
+    {"name": "0900.20 Frankfurt, FOUR RT3", "kuerzel": "0900", "ordner": "", "domains": [], "betreff_stichworte": ["0900.20", "0900", "FOUR RT3", "RT3"]},
+    {"name": "0905.20 Hasselroth, Kita", "kuerzel": "0905", "ordner": "", "domains": [], "betreff_stichworte": ["0905.20", "0905", "Hasselroth"]},
+    {"name": "0908.20 Berlin, Upbeat Hochhaus", "kuerzel": "0908", "ordner": "", "domains": [], "betreff_stichworte": ["0908.20", "0908", "Upbeat"]},
+    {"name": "0923.20 Homberg (Ohm), AOK", "kuerzel": "0923", "ordner": "", "domains": [], "betreff_stichworte": ["0923.20", "0923", "Homberg", "AOK Homberg"]},
+    {"name": "0928.20 Frankfurt, Kimpton Hotel", "kuerzel": "0928", "ordner": "", "domains": [], "betreff_stichworte": ["0928.20", "0928"]},
+    {"name": "0942.20 Frankfurt, DZ Bank Umbau", "kuerzel": "0942", "ordner": "", "domains": [], "betreff_stichworte": ["0942.20", "0942", "DZ Bank"]},
+    {"name": "0949.20 Frankfurt, Jüdische Akademie", "kuerzel": "0949", "ordner": "", "domains": [], "betreff_stichworte": ["0949.20", "0949", "Jüdische Akademie"]},
+    {"name": "0959.20 Kassel-Waldau, Kita", "kuerzel": "0959", "ordner": "", "domains": [], "betreff_stichworte": ["0959.20", "0959", "Kassel-Waldau", "Waldau"]},
+    {"name": "0963.20 Fischbachtal, Heuneburg", "kuerzel": "0963", "ordner": "", "domains": [], "betreff_stichworte": ["0963.20", "0963", "Fischbachtal", "Heuneburg"]},
+    {"name": "0987.20 Kriftel, Schwarzbachhalle", "kuerzel": "0987", "ordner": "", "domains": [], "betreff_stichworte": ["0987.20", "0987", "Kriftel", "Schwarzbachhalle"]},
+    {"name": "0994.20 Bergisch Gladbach", "kuerzel": "0994", "ordner": "", "domains": [], "betreff_stichworte": ["0994.20", "0994", "Bergisch Gladbach"]},
+    {"name": "0996.20 Frankfurt, Kimpton Hotel", "kuerzel": "0996", "ordner": "", "domains": [], "betreff_stichworte": ["0996.20", "0996"]},
+    {"name": "1005.20 Würzburg, Bauhaus", "kuerzel": "1005", "ordner": "", "domains": [], "betreff_stichworte": ["1005.20", "1005", "Würzburg Bauhaus"]},
+    {"name": "1006.20 Ludwigsburg, Goetze", "kuerzel": "1006", "ordner": "", "domains": [], "betreff_stichworte": ["1006.20", "1006", "Ludwigsburg", "Goetze"]},
+    {"name": "1017.20 Marburg-Cappel, Erich-Kästner", "kuerzel": "1017", "ordner": "", "domains": [], "betreff_stichworte": ["1017.20", "1017", "Marburg-Cappel", "Erich-Kästner"]},
+    {"name": "1020.20 Kassel, Jungfernkopf-Schule", "kuerzel": "1020", "ordner": "", "domains": [], "betreff_stichworte": ["1020.20", "1020", "Jungfernkopf"]},
+    {"name": "1021.20 Heringen, Bürgerhaus", "kuerzel": "1021", "ordner": "", "domains": [], "betreff_stichworte": ["1021.20", "1021", "Heringen"]},
+    {"name": "1024.20 Wiesbaden, Kita Hollerborn", "kuerzel": "1024", "ordner": "", "domains": [], "betreff_stichworte": ["1024.20", "1024", "Hollerborn", "Wiesbaden Kita"]},
+    {"name": "1031.20 Karlstadt, Otto und Anna Herold", "kuerzel": "1031", "ordner": "", "domains": [], "betreff_stichworte": ["1031.20", "1031", "Karlstadt", "Herold"]},
+    {"name": "1032.20 Heilbronn, Neckartalschule", "kuerzel": "1032", "ordner": "", "domains": [], "betreff_stichworte": ["1032.20", "1032", "Heilbronn", "Neckartalschule"]},
+    {"name": "1033.20 Starnberg, Strandbad", "kuerzel": "1033", "ordner": "", "domains": [], "betreff_stichworte": ["1033.20", "1033", "Starnberg", "Strandbad"]},
+    {"name": "1036.20 Darmstadt, Mühltalbad", "kuerzel": "1036", "ordner": "", "domains": [], "betreff_stichworte": ["1036.20", "1036", "Mühltalbad", "Darmstadt"]},
+    {"name": "1037.20 Frankfurt, Four RT 1 Kirkland", "kuerzel": "1037", "ordner": "", "domains": [], "betreff_stichworte": ["1037.20", "1037", "RT 1", "Kirkland"]},
+    {"name": "1038.20 Göttingen, KiTa Montessori", "kuerzel": "1038", "ordner": "", "domains": [], "betreff_stichworte": ["1038.20", "1038", "Göttingen", "Montessori"]},
+    {"name": "1051.20 Nürnberg, Haus der Athleten", "kuerzel": "1051", "ordner": "", "domains": [], "betreff_stichworte": ["1051.20", "1051", "Haus der Athleten", "Nürnberg"]},
+    {"name": "1062.20 Korbach, Berliner Schule", "kuerzel": "1062", "ordner": "", "domains": [], "betreff_stichworte": ["1062.20", "1062", "Korbach"]},
+    {"name": "1067.20 Wetzlar, Carl Zeiss", "kuerzel": "1067", "ordner": "", "domains": [], "betreff_stichworte": ["1067.20", "1067", "Wetzlar", "Carl Zeiss"]},
+    {"name": "1068.20 Oberursel, Gefahrenabwehrzentrum", "kuerzel": "1068", "ordner": "", "domains": [], "betreff_stichworte": ["1068.20", "1068", "Oberursel", "Gefahrenabwehr"]},
+    {"name": "1072.20 Frankfurt, Hotel Adina", "kuerzel": "1072", "ordner": "", "domains": [], "betreff_stichworte": ["1072.20", "1072", "Adina"]},
+    {"name": "1080.20 Künzell-Pilgerzell, Florenberg", "kuerzel": "1080", "ordner": "", "domains": [], "betreff_stichworte": ["1080.20", "1080", "Künzell", "Pilgerzell", "Florenberg"]},
+    {"name": "1083.20 Berlin, Apple Development", "kuerzel": "1083", "ordner": "", "domains": [], "betreff_stichworte": ["1083.20", "1083", "Apple Development"]},
+    {"name": "1086.20 Erlangen, CBBE Campus", "kuerzel": "1086", "ordner": "", "domains": [], "betreff_stichworte": ["1086.20", "1086", "Erlangen", "CBBE"]},
+    {"name": "1088.20 Mainz, Peter-Härtling-Schule", "kuerzel": "1088", "ordner": "", "domains": [], "betreff_stichworte": ["1088.20", "1088", "Mainz", "Peter-Härtling"]},
+
+    {"name": "JAF", "kuerzel": "JAF", "ordner": "", "domains": [], "betreff_stichworte": ["JAF"]},
+    {"name": "FOUR KLE", "kuerzel": "FOURKLE", "ordner": "", "domains": [], "betreff_stichworte": ["FOUR KLE"]},
+    {"name": "HAN", "kuerzel": "HAN", "ordner": "", "domains": [], "betreff_stichworte": ["HAN"]}
   ]
 }
