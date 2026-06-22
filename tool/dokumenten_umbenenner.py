@@ -13,6 +13,7 @@ Start:  python dokumenten_umbenenner.py
 """
 
 import os
+import re
 import shutil
 import sys
 
@@ -49,6 +50,17 @@ ANALYSIERBAR = LESBARE_TEXT_ENDUNGEN | {".png", ".jpg", ".jpeg", ".gif", ".webp"
 # "00_Posteingang" eingelesen wird (dann = dessen uebergeordneter Ordner).
 STANDARD_BASIS = r"C:\Users\ziegler\Desktop\Dokumentenumbenennung"
 EINGANG_ORDNER = "00_Posteingang"
+
+
+def _betreff_kurz(betreff):
+    """E-Mail-Betreff als Bezeichnung: Antwort-/Weiterleitungs-Präfixe weg, gekürzt."""
+    s = (betreff or "").strip()
+    while True:
+        neu = re.sub(r"(?i)^\s*(aw|wg|re|fw|fwd|antw|antwort)\s*:\s*", "", s)
+        if neu == s:
+            break
+        s = neu
+    return s[:60].strip()
 
 
 def lade_va_regeln():
@@ -350,26 +362,29 @@ class App:
     def _emails_extrahieren(self, dateien):
         """E-Mails (.eml/.msg) -> Mailtext-PDF + Anhaenge; sonst Datei unveraendert.
 
-        Liefert eine Liste von (pfad, kontext). Der Kontext (Betreff + Auszug +
-        E-Mail-Dateiname) erlaubt es, alle aus EINER Mail erzeugten Dateien
-        demselben Projekt zuzuordnen. Für Einzeldateien ist der Kontext leer.
+        Liefert eine Liste von (pfad, kontext, betreff_default). Der Kontext
+        (Betreff + Auszug + E-Mail-Dateiname) erlaubt es, alle aus EINER Mail
+        erzeugten Dateien demselben Projekt zuzuordnen; betreff_default ist nur
+        für die Mailtext-PDF gesetzt (dient als Vorgabe-Bezeichnung).
         """
         ergebnis = []
         for fp in dateien:
             if email_extract.ist_email(fp):
                 try:
-                    neu, kontext = email_extract.extrahiere(fp)
+                    neu, kontext, betreff = email_extract.extrahiere(fp)
                     ktx = (os.path.basename(fp) + " " + (kontext or "")).strip()
                     if neu:
                         self.protokoll(f"E-Mail {os.path.basename(fp)} -> {len(neu)} Datei(en) "
-                                       "extrahiert (Mailtext + Anhänge).")
-                        ergebnis += [(n, ktx) for n in neu]
+                                       "extrahiert (Mailtext + Anhänge; Signatur-Logos übersprungen).")
+                        for n in neu:
+                            bdef = betreff if "_mailtext" in os.path.basename(n).lower() else ""
+                            ergebnis.append((n, ktx, bdef))
                     else:
                         self.protokoll(f"  {os.path.basename(fp)}: nichts extrahierbar.")
                 except Exception as e:  # noqa: BLE001
                     self.protokoll(f"  E-Mail-Fehler bei {os.path.basename(fp)}: {e}")
             else:
-                ergebnis.append((fp, ""))
+                ergebnis.append((fp, "", ""))
         return ergebnis
 
     def _add_files(self, pfade, anhaengen=True):
@@ -388,12 +403,14 @@ class App:
             self._leeren()
         va_regeln = lade_va_regeln() if ist_api else None
         self.protokoll(f"Lese {len(paare)} Datei(en) – Modus: {modus} …")
-        for idx, (fp, kontext) in enumerate(paare, 1):
+        for idx, (fp, kontext, betreff_default) in enumerate(paare, 1):
             name = os.path.basename(fp)
             self.status.set(f"Analysiere {idx}/{len(paare)}: {name}")
             self.root.update_idletasks()
             felder = self._analysiere(fp, name, modus, va_regeln)
             felder["projekt"] = self._erkenne_projekt(name, kontext, felder)
+            if betreff_default and not felder.get("bezeichnung"):
+                felder["bezeichnung"] = _betreff_kurz(betreff_default)
             self._zeile_einfuegen(fp, felder)
         self.status.set(f"Fertig: {len(paare)} Datei(en). Felder pruefen, dann 'Alle umbenennen'.")
 

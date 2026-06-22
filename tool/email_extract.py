@@ -185,12 +185,34 @@ def _text_zu_pdf(kopf, body, zielpfad):
 
 
 # ----------------------------------------------------------------- API
+_BILD_ENDUNGEN = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg",
+                  ".emf", ".wmf", ".ico", ".tif", ".tiff")
+
+
+def _ist_signatur_bild(name, data):
+    """Erkennt kleine Inline-Logos/Icons aus E-Mail-Signaturen.
+
+    Solche Bilder (Firmenlogos, Social-Media-Icons) sind keine echten Anhänge
+    und sollen nicht extrahiert/umbenannt werden.
+    """
+    basis = os.path.basename(name or "")
+    ext = os.path.splitext(basis)[1].lower()
+    if ext not in _BILD_ENDUNGEN:
+        return False
+    # Outlook benennt eingebettete Bilder typischerweise imageNNN.ext.
+    if re.match(r"(?i)^(image\d{1,4}|oledata|emf\d*|clip_image\d*|~wrd\d*)\.", basis):
+        return True
+    groesse = len(data or b"")
+    return bool(groesse) and groesse < 25 * 1024   # kleine Icons/Logos
+
+
 def extrahiere(pfad):
-    """Zerlegt eine E-Mail; liefert (erzeugte Dateipfade, Kontext-Text).
+    """Zerlegt eine E-Mail; liefert (erzeugte Dateipfade, Kontext-Text, Betreff).
 
     Der Kontext-Text (Betreff + Auszug) dient der Projekt-Zuordnung, damit alle
     aus EINER Mail erzeugten Dateien (Mailtext-PDF + Anhänge) demselben Projekt
-    zugeordnet werden können.
+    zugeordnet werden können. Der Betreff dient als Default-Bezeichnung für die
+    Mailtext-PDF. Kleine Signatur-Logos werden übersprungen.
     """
     ordner = os.path.dirname(os.path.abspath(pfad))
     stem = os.path.splitext(os.path.basename(pfad))[0]
@@ -201,16 +223,20 @@ def extrahiere(pfad):
     elif endung == ".msg":
         kopf, body, anhaenge = _msg_lesen(pfad)
     else:
-        return [], ""
+        return [], "", ""
 
     erzeugt = []
     pdf_name = _freier_name(ordner, _sicherer_dateiname(stem) + "_Mailtext", ".pdf")
     _text_zu_pdf(kopf, body, os.path.join(ordner, pdf_name))
     erzeugt.append(os.path.join(ordner, pdf_name))
 
+    uebersprungen = 0
     for name, data in anhaenge:
         if not data:
             continue
+        if _ist_signatur_bild(name, data):
+            uebersprungen += 1
+            continue   # Inline-Logos aus der Signatur nicht extrahieren
         sicher = _sicherer_dateiname(name)
         st, ext = os.path.splitext(sicher)
         ziel = _freier_name(ordner, st or "Anhang", ext)
@@ -219,5 +245,6 @@ def extrahiere(pfad):
         erzeugt.append(os.path.join(ordner, ziel))
 
     kontext = (kopf.get("Betreff", "") + " " + (body or "")[:3000]).strip()
-    return erzeugt, kontext
+    return erzeugt, kontext, kopf.get("Betreff", "")
+
 
