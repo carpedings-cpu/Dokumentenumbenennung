@@ -1,9 +1,11 @@
 # KPC Posteingangs-Triage (Outlook, Windows)
 
 Liest den Outlook-Posteingang **read-only**, klassifiziert eingehende Mails und
-übergibt die **relevanten** Mails als `.msg` an den Dokumentenbenennungs-Skill.
-Die Ablage/Benennung (Mailtext-PDF + Anhänge, Projekt-Unterordner) macht
-weiterhin der Skill – die Triage baut das **nicht** doppelt.
+übergibt **alle** Mails als `.msg` an den Dokumentenbenennungs-Skill (auch
+interne/Info-Mails – es wird **alles** umbenannt). Die Ablage/Benennung
+(Mailtext-PDF + Anhänge, Projekt-Unterordner) macht weiterhin der Skill – die
+Triage baut das **nicht** doppelt. Die Klassifizierung dient der Übersicht
+(Dringlichkeit/Projekt).
 
 ## Sicherheit
 - **Posteingang READ-ONLY:** kein Verschieben, Löschen oder Als-gelesen-markieren.
@@ -70,8 +72,8 @@ python triage.py --stufe2            # Stufe-2-API erzwingen (sonst aus .env)
 - **HTML-Übersicht** (KPC-Design, A4 quer) unter `Triage-Berichte/`, gruppiert nach
   Dringlichkeit (Hoch/Mittel/Niedrig/Unklar), mit Projekt, Kategorie, Absender,
   Betreff, Eingang.
-- **`.msg`** der relevanten Mails (alles außer reiner `Info`) im Eingangsordner
-  des Skills – von dort übernimmt der Dokumentenbenennungs-Skill.
+- **`.msg`** **aller** Mails im Eingangsordner des Skills – von dort übernimmt
+  der Dokumentenbenennungs-Skill (Mailtext-PDF + Anhänge, VA-Benennung).
 
 ## Dateien
 | Datei | Zweck |

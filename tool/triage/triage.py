@@ -363,9 +363,9 @@ def baue_html(zeilen, scharf):
 </header>"""]
 
     klasse = {"Hoch": "", "Mittel": "mittel", "Niedrig": "niedrig"}
-    titel = {"Hoch": "Dringlichkeit: Hoch (wird exportiert)",
-             "Mittel": "Dringlichkeit: Mittel (wird exportiert)",
-             "Niedrig": "Info – nicht exportiert"}
+    titel = {"Hoch": "Dringlichkeit: Hoch",
+             "Mittel": "Dringlichkeit: Mittel",
+             "Niedrig": "Info / Sonstiges"}
     for g in GRUPPEN_REIHENFOLGE:
         rows = nach_gruppe[g]
         if not rows:
@@ -385,9 +385,10 @@ def baue_html(zeilen, scharf):
                 "</tr>")
         teile.append("</table>")
 
-    teile.append('<footer>READ-ONLY-Triage &middot; relevante Mails (alles außer '
-                 'reiner Info) werden im scharfen Lauf als .msg an den '
-                 'Dokumentenbenennungs-Skill übergeben.</footer></body></html>')
+    teile.append('<footer>READ-ONLY-Triage &middot; im scharfen Lauf werden '
+                 '<b>alle</b> Mails als .msg an den Dokumentenbenennungs-Skill '
+                 'übergeben und dort (Mailtext-PDF + Anhänge) umbenannt. '
+                 'Die Gruppierung dient nur der Übersicht.</footer></body></html>')
     return "".join(teile)
 
 
@@ -536,12 +537,10 @@ def main():
     except Exception:
         pass
 
-    # --- Ablage nur im scharfen Lauf ---
+    # --- Ablage nur im scharfen Lauf: ALLE Mails uebergeben (alles umbenennen) ---
     if args.scharf:
         os.makedirs(eingang, exist_ok=True)
         for z in zeilen:
-            if not z["_relevant"]:
-                continue
             try:
                 stamm = f"{z['_received']:%y%m%d}_{z['kuerzel'] or 'X'}_{sicherer_name(z['betreff'])}"
                 ziel = os.path.join(eingang, stamm + ".msg")
@@ -563,7 +562,8 @@ def main():
         state["letzte_received"] = neue_max_received.isoformat()
         state["verarbeitete_entry_ids"] = list(verarbeitet | {z["_entry_id"] for z in zeilen})
         speichere_state(state)
-        print(f"Scharf: {n_export} relevante Mail(s) als .msg nach {eingang} gelegt. "
+        print(f"Scharf: {n_export} Mail(s) als .msg nach {eingang} gelegt "
+              "(der Dokumentenbenennungs-Skill extrahiert/benennt sie). "
               "Marker weitergestellt.")
     else:
         print("Trockenlauf: nichts abgelegt, Marker unverändert. "
