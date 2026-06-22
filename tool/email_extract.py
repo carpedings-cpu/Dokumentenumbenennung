@@ -66,9 +66,11 @@ def _eml_lesen(pfad):
             continue
         disp = part.get_content_disposition()
         ctype = part.get_content_type()
-        if disp == "attachment" or (disp == "inline" and part.get_filename()):
+        cid = part.get("Content-ID")
+        if disp == "attachment" or part.get_filename():
             data = part.get_payload(decode=True) or b""
-            anhaenge.append((part.get_filename() or "Anhang", data))
+            inline = (disp == "inline") or bool(cid)
+            anhaenge.append((part.get_filename() or "Anhang", data, ctype, inline))
         elif ctype == "text/plain" and plain is None:
             plain = part.get_content()
         elif ctype == "text/html" and htmlteil is None:
@@ -99,8 +101,12 @@ def _msg_lesen(pfad):
             data = att.data
             if isinstance(data, str):
                 data = data.encode("utf-8", "replace")
-            if data:
-                anhaenge.append((name, data))
+            if not data:
+                continue
+            cid = getattr(att, "cid", None) or getattr(att, "contentId", None)
+            ctype = getattr(att, "mimetype", "") or ""
+            inline = bool(cid)
+            anhaenge.append((name, data, ctype, inline))
         return kopf, body or "", anhaenge
     finally:
         try:
@@ -189,21 +195,24 @@ _BILD_ENDUNGEN = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg",
                   ".emf", ".wmf", ".ico", ".tif", ".tiff")
 
 
-def _ist_signatur_bild(name, data):
-    """Erkennt kleine Inline-Logos/Icons aus E-Mail-Signaturen.
+def _ist_echter_anhang(name, data, ctype, inline):
+    """True = echter Datei-Anhang (PDF, Word, Excel, Foto …).
 
-    Solche Bilder (Firmenlogos, Social-Media-Icons) sind keine echten Anhänge
-    und sollen nicht extrahiert/umbenannt werden.
+    Im Mailtext eingebettete Bilder (Logos/Icons aus Signatur und Textkörper)
+    werden aussortiert – der Nutzer will nur die E-Mail als PDF und die echten
+    Anhänge. Nicht-Bild-Anhänge bleiben IMMER erhalten.
     """
     basis = os.path.basename(name or "")
     ext = os.path.splitext(basis)[1].lower()
-    if ext not in _BILD_ENDUNGEN:
-        return False
-    # Outlook benennt eingebettete Bilder typischerweise imageNNN.ext.
-    if re.match(r"(?i)^(image\d{1,4}|oledata|emf\d*|clip_image\d*|~wrd\d*)\.", basis):
-        return True
+    ist_bild = (ctype or "").lower().startswith("image/") or ext in _BILD_ENDUNGEN
+    if not ist_bild:
+        return True   # Dokumente (PDF/Word/Excel/…) immer behalten
+    if inline:
+        return False  # im Text eingebettetes Bild (Content-ID) -> Logo/Signatur
+    if re.match(r"(?i)^(image\d{1,4}|oledata|emf\d*|clip_image\d*|~wrd\d*|att\d+)\.", basis):
+        return False  # typische Auto-Namen eingebetteter Bilder
     groesse = len(data or b"")
-    return bool(groesse) and groesse < 25 * 1024   # kleine Icons/Logos
+    return not (groesse and groesse < 40 * 1024)   # winzige Bilder = Icons/Logos
 
 
 def extrahiere(pfad):
@@ -231,12 +240,12 @@ def extrahiere(pfad):
     erzeugt.append(os.path.join(ordner, pdf_name))
 
     uebersprungen = 0
-    for name, data in anhaenge:
+    for name, data, ctype, inline in anhaenge:
         if not data:
             continue
-        if _ist_signatur_bild(name, data):
+        if not _ist_echter_anhang(name, data, ctype, inline):
             uebersprungen += 1
-            continue   # Inline-Logos aus der Signatur nicht extrahieren
+            continue   # eingebettete Logos/Signatur-Bilder nicht extrahieren
         sicher = _sicherer_dateiname(name)
         st, ext = os.path.splitext(sicher)
         ziel = _freier_name(ordner, st or "Anhang", ext)
