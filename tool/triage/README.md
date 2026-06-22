@@ -47,6 +47,9 @@ python triage.py --stufe2            # Stufe-2-API erzwingen (sonst aus .env)
 ```
 **Empfohlen:** zuerst Trockenlauf, HTML-Übersicht prüfen, dann scharf schalten.
 
+> **Erster Lauf beginnt ab heute** – ältere Mails werden bewusst ignoriert.
+> Soll es doch ab einem früheren Datum starten: `--seit JJJJ-MM-TT`.
+
 ## Konfiguration
 - `triage_config.json` (optional) überschreibt die Standardwerte, u. a.:
   - `base_dir` – Projektbasis (Default `C:\Users\ziegler\Desktop\Dokumentenumbenennung`)

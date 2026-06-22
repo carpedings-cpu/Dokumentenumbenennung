@@ -427,8 +427,9 @@ def main():
     elif state.get("letzte_received"):
         marker = dt.datetime.fromisoformat(state["letzte_received"])
     else:
-        marker = dt.datetime.now() - dt.timedelta(days=14)   # erster Lauf: 14 Tage
-        print(f"Erster Lauf: betrachte Mails der letzten 14 Tage (ab {marker:%d.%m.%Y}).")
+        # Erster Lauf: erst AB HEUTE beginnen (keine alten Mails einsammeln).
+        marker = dt.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        print(f"Erster Lauf: betrachte nur Mails ab heute ({marker:%d.%m.%Y}).")
     verarbeitet = set(state.get("verarbeitete_entry_ids", []))
 
     print(f"Modus: {'SCHARF' if args.scharf else 'TROCKENLAUF'} | "
