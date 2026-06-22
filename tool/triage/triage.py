@@ -117,7 +117,7 @@ DRINGLICHKEIT = {
     "Lieferavis": "Mittel",
     "Info": "Niedrig",
 }
-GRUPPEN_REIHENFOLGE = ["Unklar", "Hoch", "Mittel", "Niedrig"]
+GRUPPEN_REIHENFOLGE = ["Hoch", "Mittel", "Niedrig"]
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ def finde_projekt(mapping, domain, betreff):
                 score += 3
         for kw in p.get("betreff_stichworte", []):
             kw = (kw or "").lower().strip()
-            if kw and kw in betreff_low:
+            if kw and re.search(r"\b" + re.escape(kw) + r"\b", betreff_low):
                 score += 1
         if score > bestscore:
             bestscore, bestes = score, p
@@ -362,9 +362,10 @@ def baue_html(zeilen, scharf):
         + " &nbsp;|&nbsp; Mails: " + str(len(zeilen)) + """</div>
 </header>"""]
 
-    klasse = {"Hoch": "", "Mittel": "mittel", "Niedrig": "niedrig", "Unklar": "unklar"}
-    titel = {"Hoch": "Dringlichkeit: Hoch", "Mittel": "Dringlichkeit: Mittel",
-             "Niedrig": "Info / nicht exportiert", "Unklar": "Unklar – bitte prüfen"}
+    klasse = {"Hoch": "", "Mittel": "mittel", "Niedrig": "niedrig"}
+    titel = {"Hoch": "Dringlichkeit: Hoch (wird exportiert)",
+             "Mittel": "Dringlichkeit: Mittel (wird exportiert)",
+             "Niedrig": "Info – nicht exportiert"}
     for g in GRUPPEN_REIHENFOLGE:
         rows = nach_gruppe[g]
         if not rows:
@@ -403,6 +404,8 @@ def main():
                     help="Stufe-2-API erzwingen (sonst aus .env: TRIAGE_USE_API).")
     ap.add_argument("--seit", default=None,
                     help="Startdatum YYYY-MM-DD (überschreibt den Marker einmalig).")
+    ap.add_argument("--heute", action="store_true",
+                    help="Nur die heutigen Mails ansehen (Marker ignorieren, zum erneuten Prüfen).")
     ap.add_argument("--max", type=int, default=0, help="Maximale Anzahl Mails (Debug).")
     args = ap.parse_args()
 
@@ -421,8 +424,12 @@ def main():
     mapping = aktualisiere_projekte_aus_ordnern(lade_mapping(), cfg)
     projektnamen = [f"{p.get('kuerzel','')} – {p.get('name','')}" for p in mapping["projekte"]]
 
+    heute_anfang = dt.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     state = lade_state()
-    if args.seit:
+    if args.heute:
+        marker = heute_anfang
+        print("--heute: betrachte alle heutigen Mails erneut (Marker wird nicht genutzt).")
+    elif args.seit:
         marker = dt.datetime.strptime(args.seit, "%Y-%m-%d")
     elif state.get("letzte_received"):
         marker = dt.datetime.fromisoformat(state["letzte_received"])
@@ -491,14 +498,15 @@ def main():
                     print(f"  Stufe-2-Fehler bei '{betreff[:40]}': {e}")
 
             relevant = kategorie != "Info"
-            gruppe = (DRINGLICHKEIT.get(kategorie, "Niedrig") if eindeutig
-                      else ("Niedrig" if relevant else "Unklar"))
-            if not relevant:
-                gruppe = "Unklar" if not eindeutig else "Niedrig"
+            gruppe = DRINGLICHKEIT.get(kategorie, "Niedrig")   # rein nach Dringlichkeit
+            if relevant and not projekt:
+                projekt_anzeige = "(Projekt prüfen)"
+            else:
+                projekt_anzeige = (projekt or {}).get("name", "—") if projekt else "—"
 
             zeilen.append({
                 "kuerzel": (projekt or {}).get("kuerzel", "") if projekt else "",
-                "projekt": (projekt or {}).get("name", "—") if projekt else "—",
+                "projekt": projekt_anzeige,
                 "kategorie": kategorie,
                 "absender": absender_smtp or "(unbekannt)",
                 "betreff": betreff,

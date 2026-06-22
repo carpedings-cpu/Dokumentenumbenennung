@@ -1,19 +1,33 @@
 {
-  "_hinweis": "Pflege diese Datei selbst. Neue Projekt-Unterordner unter base_dir werden beim Lauf automatisch ergaenzt (mit leeren Domains/Stichworten). 'domains' = bekannte Absender-Domains (z. B. lieferant.de), 'betreff_stichworte' = Worte, die im Betreff auf dieses Projekt deuten.",
+  "_hinweis": "Pflege diese Datei selbst. 'domains' = bekannte Absender-Domains (z. B. lieferant.de), 'betreff_stichworte' = Worte/Codes, die im Betreff auf dieses Projekt deuten (ganzwoertlich, daher sind auch kurze Codes wie HAN sicher). Neue Projekt-Unterordner unter base_dir werden beim Lauf automatisch ergaenzt.",
   "projekte": [
     {
-      "name": "1030 Musterstrasse",
-      "kuerzel": "1030",
-      "ordner": "1030_Musterstrasse",
-      "domains": ["kunde-beispiel.de", "planer-beispiel.de"],
-      "betreff_stichworte": ["Musterstrasse", "1030", "BV Muster"]
+      "name": "JAF",
+      "kuerzel": "JAF",
+      "ordner": "",
+      "domains": [],
+      "betreff_stichworte": ["JAF"]
     },
     {
-      "name": "1042 Beispielklinik",
-      "kuerzel": "1042",
-      "ordner": "1042_Beispielklinik",
-      "domains": ["bauherr-klinik.de"],
-      "betreff_stichworte": ["Beispielklinik", "1042"]
+      "name": "FOUR KLE",
+      "kuerzel": "FOURKLE",
+      "ordner": "",
+      "domains": [],
+      "betreff_stichworte": ["FOUR KLE"]
+    },
+    {
+      "name": "HAN",
+      "kuerzel": "HAN",
+      "ordner": "",
+      "domains": [],
+      "betreff_stichworte": ["HAN"]
+    },
+    {
+      "name": "(Beispiel) 1030 Musterstrasse",
+      "kuerzel": "1030",
+      "ordner": "1030_Musterstrasse",
+      "domains": ["kunde-beispiel.de"],
+      "betreff_stichworte": ["Musterstrasse", "1030"]
     }
   ]
 }
