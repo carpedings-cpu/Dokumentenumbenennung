@@ -6,3 +6,10 @@ __pycache__/
 tool/triage/.env
 tool/triage/triage_state.json
 tool/triage/triage_config.json
+
+# Morgenbriefing: Geheimnisse, Status und privates Protokoll nicht einchecken
+tool/briefing/.env
+tool/briefing/briefing_state.json
+tool/briefing/briefing_config.json
+tool/briefing/briefing_log.md
+
