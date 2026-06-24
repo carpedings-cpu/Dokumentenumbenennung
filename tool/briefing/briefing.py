@@ -400,12 +400,26 @@ def baue_html(brief, mails, zeitraum):
 
 
 def schreibe_html(brief, mails, zeitraum, cfg):
-    ordner = os.path.join(cfg["base_dir"], cfg["briefing_unterordner"])
+    ordner = os.path.join(HIER, "Briefings")     # direkt neben dem Programm
     os.makedirs(ordner, exist_ok=True)
     pfad = os.path.join(ordner, f"Briefing_{dt.datetime.now():%Y%m%d_%H%M}.html")
     with open(pfad, "w", encoding="utf-8") as f:
         f.write(baue_html(brief, mails, zeitraum))
     return pfad
+
+
+def oeffne_datei(pfad):
+    """Oeffnet die Datei moeglichst zuverlaessig im Standardprogramm/Browser."""
+    try:
+        os.startfile(pfad)   # nur Windows
+        return
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import webbrowser
+        webbrowser.open("file:///" + os.path.abspath(pfad).replace("\\", "/"))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -554,10 +568,7 @@ def _lauf(args):
     html_pfad = schreibe_html(brief, mails, zeitraum, cfg)
     schreibe_log(brief, mails, cfg)
     print(f"Briefing: {html_pfad}")
-    try:
-        os.startfile(html_pfad)   # nur Windows
-    except Exception:  # noqa: BLE001
-        pass
+    oeffne_datei(html_pfad)
 
     state["letzter_lauf"] = jetzt.isoformat()
     speichere_state(state)
@@ -570,7 +581,7 @@ def _lauf(args):
     _melde("Morgenbriefing fertig",
            f"{len(mails)} Mail(s) ausgewertet.\n"
            f"{n} Termin(e) in den Outlook-Kalender eingetragen.\n\n"
-           "Das Briefing wurde im Browser geoeffnet.")
+           f"Briefing gespeichert (oeffnet sich im Browser):\n{html_pfad}")
 
 
 def main():
