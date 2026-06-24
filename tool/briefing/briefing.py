@@ -35,7 +35,29 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-HIER = os.path.dirname(os.path.abspath(__file__))
+HIER = (os.path.dirname(sys.executable)
+        if getattr(sys, "frozen", False)            # als .exe: Ordner NEBEN der .exe
+        else os.path.dirname(os.path.abspath(__file__)))
+
+ENV_VORLAGE = (
+    "# KPC Morgenbriefing - Einstellungen\n"
+    "# Gemini-Schluessel holen: https://aistudio.google.com/apikey\n"
+    "GEMINI_API_KEY=AIza...\n"
+)
+
+
+def _melde(titel, text, fehler=False):
+    """Gibt eine Meldung aus - im Fenster (falls moeglich) und auf der Konsole."""
+    print(text)
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        r = tk.Tk()
+        r.withdraw()
+        (messagebox.showerror if fehler else messagebox.showinfo)(titel, text)
+        r.destroy()
+    except Exception:  # noqa: BLE001
+        pass
 
 CONFIG = {
     "base_dir": r"C:\Users\ziegler\Desktop\Dokumentenumbenennung",
@@ -108,6 +130,9 @@ def lade_projektnamen(cfg):
         os.path.join(HIER, "projekte_mapping.json"),
         os.path.join(HIER, "..", "triage", "projekte_mapping.json"),
     ]
+    meipass = getattr(sys, "_MEIPASS", None)     # in der .exe gebuendelte Liste
+    if meipass:
+        kandidaten.append(os.path.join(meipass, "projekte_mapping.json"))
     for pfad in kandidaten:
         try:
             if os.path.exists(pfad):
@@ -484,20 +509,25 @@ def trage_termine_ein(termine):
 # ---------------------------------------------------------------------------
 # Hauptlauf
 # ---------------------------------------------------------------------------
-def main():
-    ap = argparse.ArgumentParser(description="KPC Morgenbriefing (Outlook, read-only).")
-    ap.add_argument("--seit", default=None, help="Startdatum YYYY-MM-DD.")
-    ap.add_argument("--stunden", type=int, default=0, help="Rueckblick in Stunden.")
-    ap.add_argument("--kein-kalender", action="store_true", help="Kein Termin-Fenster.")
-    ap.add_argument("--max", type=int, default=0, help="Maximale Mailanzahl (Debug).")
-    args = ap.parse_args()
-
+def _lauf(args):
     cfg = lade_config()
     key = gemini_key()
     if not key:
-        print("FEHLER: Kein Gemini-Schluessel. Bitte in der Datei .env eintragen:\n"
-              "  GEMINI_API_KEY=AIza...\n  (Schluessel: https://aistudio.google.com/apikey)")
-        sys.exit(1)
+        pfad = os.path.join(HIER, ".env")
+        if not os.path.exists(pfad):
+            try:
+                with open(pfad, "w", encoding="utf-8") as f:
+                    f.write(ENV_VORLAGE)
+            except Exception:  # noqa: BLE001
+                pass
+        _melde("Schluessel fehlt",
+               "Es ist noch kein Gemini-Schluessel hinterlegt.\n\n"
+               f"Bitte die Datei .env (liegt neben dem Programm:\n{pfad})\n"
+               "oeffnen und den Schluessel eintragen:\n\n"
+               "  GEMINI_API_KEY=AIza...\n\n"
+               "Schluessel holen: https://aistudio.google.com/apikey\n"
+               "Danach das Programm erneut starten.", fehler=True)
+        return
 
     state = lade_state()
     jetzt = dt.datetime.now()
@@ -513,7 +543,8 @@ def main():
     print(f"Lese Outlook ab {marker:%d.%m.%Y %H:%M} ...")
     mails = sammle_mails(cfg, marker, args.max or cfg["max_mails"])
     if not mails:
-        print("Keine neuen Mails seit dem letzten Briefing.")
+        _melde("Kein neues Briefing",
+               "Es gibt keine neuen Mails seit dem letzten Briefing.")
         return
 
     print(f"{len(mails)} Mail(s) gefunden. Erstelle Briefing mit Gemini ...")
@@ -531,13 +562,30 @@ def main():
     state["letzter_lauf"] = jetzt.isoformat()
     speichere_state(state)
 
+    n = 0
     if not args.kein_kalender:
         auswahl = bestaetige_termine(brief.get("termine", []))
         n = trage_termine_ein(auswahl)
-        if n:
-            print(f"{n} Termin(e) in den Outlook-Kalender eingetragen.")
-        else:
-            print("Keine Termine eingetragen.")
+
+    _melde("Morgenbriefing fertig",
+           f"{len(mails)} Mail(s) ausgewertet.\n"
+           f"{n} Termin(e) in den Outlook-Kalender eingetragen.\n\n"
+           "Das Briefing wurde im Browser geoeffnet.")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="KPC Morgenbriefing (Outlook, read-only).")
+    ap.add_argument("--seit", default=None, help="Startdatum YYYY-MM-DD.")
+    ap.add_argument("--stunden", type=int, default=0, help="Rueckblick in Stunden.")
+    ap.add_argument("--kein-kalender", action="store_true", help="Kein Termin-Fenster.")
+    ap.add_argument("--max", type=int, default=0, help="Maximale Mailanzahl (Debug).")
+    args, _ = ap.parse_known_args()
+    try:
+        _lauf(args)
+    except Exception as e:  # noqa: BLE001
+        _melde("Fehler", f"Das Briefing konnte nicht erstellt werden:\n\n{e}\n\n"
+               "Tipp: Ist das klassische Outlook geoeffnet und der Schluessel "
+               "in der .env korrekt?", fehler=True)
 
 
 if __name__ == "__main__":

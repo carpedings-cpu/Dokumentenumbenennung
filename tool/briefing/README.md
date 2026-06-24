@@ -15,17 +15,26 @@ den Outlook-Kalender eingetragen.
 
 ## Voraussetzungen
 - Klassisches **Desktop-Outlook** (nicht „neues Outlook"/Store-App – die hat kein COM).
-- **Python 3** und das Paket **pywin32** (installiert `0_Einrichten.bat`).
 - Ein **Gemini-Schlüssel**: https://aistudio.google.com/apikey
 
-## Einrichten (einmalig)
-1. **`0_Einrichten.bat`** doppelklicken (installiert pywin32, legt `.env` an).
-2. **`.env`** öffnen und den Schlüssel eintragen:
-   `GEMINI_API_KEY=AIza...`
+## Variante A (empfohlen): die `.exe` – kein Python nötig
+1. **`KPC-Morgenbriefing.exe`** aus den GitHub-Releases herunterladen und in einen
+   Ordner legen (z. B. auf den Desktop).
+2. Einmal doppelklicken. Beim ersten Start wird daneben eine **`.env`** angelegt
+   und du wirst gefragt, den Schlüssel einzutragen.
+3. Die **`.env`** (liegt neben der `.exe`) öffnen → `GEMINI_API_KEY=AIza...`
+   eintragen → speichern.
+4. `KPC-Morgenbriefing.exe` erneut doppelklicken → Briefing öffnet sich → im
+   Termin-Fenster anhaken, was in den Kalender soll → „Ausgewählte in Kalender
+   eintragen".
 
-## Benutzen
-- **`Briefing.bat`** doppelklicken → Briefing öffnet sich → im Termin-Fenster
-  anhaken, was in den Kalender soll → „Ausgewählte in Kalender eintragen".
+> Wichtig: `.env`, das Protokoll und der Status liegen **neben der `.exe`** –
+> die `.exe` also nicht in einen schreibgeschützten Ordner legen.
+
+## Variante B: aus dem Quellcode (Python)
+1. **`0_Einrichten.bat`** doppelklicken (installiert pywin32, legt `.env` an).
+2. **`.env`** öffnen und den Schlüssel eintragen: `GEMINI_API_KEY=AIza...`
+3. **`Briefing.bat`** doppelklicken.
 
 ### Automatisch jeden Morgen (optional)
 Windows **Aufgabenplanung** → „Einfache Aufgabe erstellen" → täglich z. B. 7:30 →
