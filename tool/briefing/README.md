@@ -16,6 +16,12 @@ gemerkt und **kommen nicht wieder**.
 (Betreff = „Projekt – Titel") und **nur nach Bestätigung**. **Terminänderungen**
 (gleicher Termin, neues Datum) werden als *„GEÄNDERT: war … → jetzt …"* markiert.
 
+**Zeitraum beim Start:** Nach dem Doppelklick fragt das Programm, was es auswerten
+soll – *Seit letztem Briefing* (normal), *Heute (ab 0 Uhr)*, *Letzte 3 Tage* oder
+*Letzte 7 Tage*. So holst du ältere Aufgaben bei Bedarf erneut (Doppelte werden
+vermieden). Für die automatische tägliche Ausführung die `.exe` mit dem Zusatz
+**`--auto`** starten (dann ohne Abfrage).
+
 ## Sicherheit / Datenschutz
 - **E-Mails werden nur gelesen.** Einzige Schreibaktion: die von dir bestätigten
   Kalender-Termine anlegen.

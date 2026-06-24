@@ -775,6 +775,54 @@ def trage_termine_ein(termine, state):
 # ---------------------------------------------------------------------------
 # Hauptlauf
 # ---------------------------------------------------------------------------
+def _marker_normal(state, cfg, jetzt):
+    if state.get("letzter_lauf"):
+        return dt.datetime.fromisoformat(state["letzter_lauf"])
+    return jetzt - dt.timedelta(hours=cfg["stunden_rueckblick_erststart"])
+
+
+def waehle_zeitraum(state, cfg, jetzt):
+    """Kleines Startfenster: welchen Zeitraum auswerten? Gibt den Marker zurueck."""
+    try:
+        import tkinter as tk
+        from tkinter import ttk
+    except Exception:  # noqa: BLE001
+        return _marker_normal(state, cfg, jetzt)
+    wahl = {"v": "normal"}
+    root = tk.Tk()
+    root.title("Morgenbriefing - Zeitraum")
+    root.geometry("460x300")
+    ttk.Label(root, padding=12, font=("", 11, "bold"),
+              text="Welchen Zeitraum soll das Briefing auswerten?").pack(anchor="w")
+    ttk.Label(root, padding=(12, 0), foreground="#6b5040",
+              text=("Normal = nur neue Mails seit dem letzten Lauf.\n"
+                    "Weiter zurueck holt aeltere Aufgaben erneut "
+                    "(Doppelte werden vermieden).")).pack(anchor="w")
+
+    def setze(v):
+        wahl["v"] = v
+        root.destroy()
+    f = ttk.Frame(root, padding=12)
+    f.pack(fill="x")
+    ttk.Button(f, text="Seit letztem Briefing (normal)",
+               command=lambda: setze("normal")).pack(fill="x", pady=3)
+    ttk.Button(f, text="Heute (ab 0:00 Uhr)",
+               command=lambda: setze("heute")).pack(fill="x", pady=3)
+    ttk.Button(f, text="Letzte 3 Tage",
+               command=lambda: setze("3")).pack(fill="x", pady=3)
+    ttk.Button(f, text="Letzte 7 Tage",
+               command=lambda: setze("7")).pack(fill="x", pady=3)
+    root.mainloop()
+    v = wahl["v"]
+    if v == "heute":
+        return jetzt.replace(hour=0, minute=0, second=0, microsecond=0)
+    if v == "3":
+        return jetzt - dt.timedelta(days=3)
+    if v == "7":
+        return jetzt - dt.timedelta(days=7)
+    return _marker_normal(state, cfg, jetzt)
+
+
 def _lauf(args):
     cfg = lade_config()
     key = gemini_key()
@@ -802,10 +850,10 @@ def _lauf(args):
         marker = dt.datetime.strptime(args.seit, "%Y-%m-%d")
     elif args.stunden:
         marker = jetzt - dt.timedelta(hours=args.stunden)
-    elif state.get("letzter_lauf"):
-        marker = dt.datetime.fromisoformat(state["letzter_lauf"])
+    elif args.auto:
+        marker = _marker_normal(state, cfg, jetzt)     # ohne Nachfrage (Aufgabenplanung)
     else:
-        marker = jetzt - dt.timedelta(hours=cfg["stunden_rueckblick_erststart"])
+        marker = waehle_zeitraum(state, cfg, jetzt)
 
     print(f"Lese Outlook ab {marker:%d.%m.%Y %H:%M} ...")
     mails = sammle_mails(cfg, marker, args.max or cfg["max_mails"])
@@ -865,6 +913,8 @@ def main():
     ap.add_argument("--stunden", type=int, default=0, help="Rueckblick in Stunden.")
     ap.add_argument("--kein-kalender", action="store_true", help="Kein Termin-Fenster.")
     ap.add_argument("--kein-abhaken", action="store_true", help="Kein Aufgaben-Fenster.")
+    ap.add_argument("--auto", action="store_true",
+                    help="Ohne Zeitraum-Abfrage starten (fuer die Aufgabenplanung).")
     ap.add_argument("--max", type=int, default=0, help="Maximale Mailanzahl (Debug).")
     args, _ = ap.parse_known_args()
     try:
