@@ -3,25 +3,18 @@
 """
 KPC Morgenbriefing (Outlook, Windows, COM/pywin32).
 
-Liest Posteingang + Gesendete seit dem letzten Briefing (READ-ONLY), fasst die
-Mails mit Google Gemini zu einem Briefing zusammen, erkennt Termine/Fristen,
-schreibt eine HTML-Uebersicht (KPC-Design, oeffnet sie automatisch) und ein
-laufendes Protokoll (das "Gedaechtnis"). Erkannte Termine werden in einem
-Fenster zur Auswahl angeboten und NUR nach Bestaetigung in den Outlook-Kalender
-eingetragen.
+Liest Posteingang + Gesendete seit dem letzten Lauf (READ-ONLY), fasst die Mails
+mit Google Gemini zusammen, pflegt eine fortlaufende AUFGABENLISTE (abhakbar,
+erledigte verschwinden dauerhaft), erkennt TERMINE/FRISTEN inkl. Terminaenderungen
+und traegt bestaetigte Termine MIT Projekt in den Outlook-Kalender ein.
+
+Unterscheidung "fuer wen": Steht man im AN -> eigene Aufgabe; nur in KOPIE/CC ->
+jemand anderes ist zustaendig (separat ausgewiesen).
 
 SICHERHEIT:
-  - E-Mails werden ausschliesslich GELESEN. Einzige Schreibaktion ist das
-    Anlegen der vom Nutzer bestaetigten Kalender-Termine.
-  - Inkrementell: nur Mails seit dem letzten Lauf (Marker in briefing_state.json).
-  - Fuer die Zusammenfassung gehen Betreff + Textauszug an die Gemini-API
-    (vom Nutzer ausdruecklich gewuenscht).
-
-Aufruf:
-  python briefing.py                 # Briefing seit letztem Lauf
-  python briefing.py --stunden 48    # Rueckblick 48 Stunden
-  python briefing.py --seit 2026-06-20
-  python briefing.py --kein-kalender # nur Briefing, kein Termin-Fenster
+  - E-Mails werden nur GELESEN. Einzige Schreibaktion: bestaetigte Kalender-Termine.
+  - Inkrementell ueber Marker (briefing_state.json).
+  - Fuer die Zusammenfassung gehen Betreff + Textauszug an die Gemini-API.
 """
 
 import argparse
@@ -45,9 +38,19 @@ ENV_VORLAGE = (
     "GEMINI_API_KEY=AIza...\n"
 )
 
+CONFIG = {
+    "base_dir": r"C:\Users\ziegler\Desktop\Dokumentenumbenennung",
+    "gesendete_einbeziehen": True,
+    "max_mails": 70,
+    "stunden_rueckblick_erststart": 24,
+    "gemini_modell": "gemini-2.5-flash",
+}
+
+GEMINI_ENDPUNKT = "https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
+GRUPPEN = ["Hoch", "Mittel", "Niedrig"]
+
 
 def _melde(titel, text, fehler=False):
-    """Gibt eine Meldung aus - im Fenster (falls moeglich) und auf der Konsole."""
     print(text)
     try:
         import tkinter as tk
@@ -59,21 +62,22 @@ def _melde(titel, text, fehler=False):
     except Exception:  # noqa: BLE001
         pass
 
-CONFIG = {
-    "base_dir": r"C:\Users\ziegler\Desktop\Dokumentenumbenennung",
-    "briefing_unterordner": "Morgenbriefing",
-    "gesendete_einbeziehen": True,
-    "max_mails": 70,                  # Schutz gegen riesige API-Anfragen
-    "stunden_rueckblick_erststart": 24,
-    "gemini_modell": "gemini-2.5-flash",
-}
 
-GEMINI_ENDPUNKT = "https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
-GRUPPEN = ["Hoch", "Mittel", "Niedrig"]
+def oeffne_datei(pfad):
+    try:
+        os.startfile(pfad)   # nur Windows
+        return
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import webbrowser
+        webbrowser.open("file:///" + os.path.abspath(pfad).replace("\\", "/"))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # ---------------------------------------------------------------------------
-# Konfiguration / .env / Status
+# Konfiguration / .env
 # ---------------------------------------------------------------------------
 def lade_config():
     pfad = os.path.join(HIER, "briefing_config.json")
@@ -88,12 +92,12 @@ def lade_config():
 def lade_env(pfad):
     werte = {}
     if os.path.exists(pfad):
-        for zeile in open(pfad, encoding="utf-8"):
+        for zeile in open(pfad, encoding="utf-8-sig"):
             zeile = zeile.strip()
             if not zeile or zeile.startswith("#") or "=" not in zeile:
                 continue
             k, v = zeile.split("=", 1)
-            werte[k.strip()] = v.strip().strip('"').strip("'")
+            werte[k.strip()] = re.sub(r"\s+", "", v).strip('"').strip("'")
     return werte
 
 
@@ -103,6 +107,9 @@ def gemini_key():
             or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
 
 
+# ---------------------------------------------------------------------------
+# Status (Marker + bekannte Termine) und Aufgabenliste
+# ---------------------------------------------------------------------------
 def state_pfad():
     return os.path.join(HIER, "briefing_state.json")
 
@@ -110,19 +117,76 @@ def state_pfad():
 def lade_state():
     if os.path.exists(state_pfad()):
         try:
-            return json.load(open(state_pfad(), encoding="utf-8"))
+            d = json.load(open(state_pfad(), encoding="utf-8"))
+            d.setdefault("letzter_lauf", None)
+            d.setdefault("termine", {})       # key -> {datum, titel, projekt}
+            return d
         except Exception:  # noqa: BLE001
             pass
-    return {"letzter_lauf": None}
+    return {"letzter_lauf": None, "termine": {}}
 
 
 def speichere_state(state):
-    json.dump(state, open(state_pfad(), "w", encoding="utf-8"),
-              ensure_ascii=False, indent=2)
+    json.dump(state, open(state_pfad(), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+
+
+def todo_pfad():
+    return os.path.join(HIER, "todos.json")
+
+
+def lade_todos():
+    if os.path.exists(todo_pfad()):
+        try:
+            d = json.load(open(todo_pfad(), encoding="utf-8"))
+            if isinstance(d, dict) and isinstance(d.get("todos"), list):
+                return d
+        except Exception:  # noqa: BLE001
+            pass
+    return {"todos": []}
+
+
+def speichere_todos(store):
+    json.dump(store, open(todo_pfad(), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+
+
+def _norm(s):
+    return re.sub(r"[^0-9a-zäöüß ]+", " ", (s or "").lower()).strip()
+
+
+def schluessel(projekt, titel):
+    return _norm(projekt) + "|" + _norm(titel)[:70]
+
+
+def merge_todos(store, punkte, heute):
+    """Fuegt neue Aufgaben hinzu; bereits bekannte (offen ODER erledigt) nicht erneut."""
+    bekannt = {t["id"] for t in store["todos"]}
+    neu = 0
+    for p in punkte:
+        thema = (p.get("thema") or "").strip()
+        if not thema:
+            continue
+        sid = schluessel(p.get("projekt", ""), thema)
+        if sid in bekannt:
+            continue
+        bekannt.add(sid)
+        store["todos"].append({
+            "id": sid,
+            "projekt": p.get("projekt", "Allgemein"),
+            "thema": thema,
+            "schritt": p.get("naechster_schritt", ""),
+            "dringlichkeit": p.get("dringlichkeit", "Niedrig"),
+            "fuer_mich": bool(p.get("fuer_mich", True)),
+            "richtung": p.get("richtung", ""),
+            "status": "offen",
+            "erstellt": heute,
+            "erledigt_am": None,
+        })
+        neu += 1
+    return neu
 
 
 # ---------------------------------------------------------------------------
-# Projektliste (zur Gruppierung) - aus projekte_mapping.json, falls vorhanden
+# Projektliste (zur Gruppierung)
 # ---------------------------------------------------------------------------
 def lade_projektnamen(cfg):
     kandidaten = [
@@ -130,7 +194,7 @@ def lade_projektnamen(cfg):
         os.path.join(HIER, "projekte_mapping.json"),
         os.path.join(HIER, "..", "triage", "projekte_mapping.json"),
     ]
-    meipass = getattr(sys, "_MEIPASS", None)     # in der .exe gebuendelte Liste
+    meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         kandidaten.append(os.path.join(meipass, "projekte_mapping.json"))
     for pfad in kandidaten:
@@ -148,7 +212,7 @@ def lade_projektnamen(cfg):
 
 
 # ---------------------------------------------------------------------------
-# Outlook (READ-ONLY)
+# Outlook (READ-ONLY lesen)
 # ---------------------------------------------------------------------------
 def outlook_app():
     try:
@@ -193,9 +257,82 @@ def empfaenger_anzeige(item):
         return "(unbekannt)"
 
 
+def eigene_adressen(app):
+    """SMTP-Adressen des eigenen Postfachs (fuer An/Kopie-Unterscheidung)."""
+    adr = set()
+    try:
+        ns = app.GetNamespace("MAPI")
+        try:
+            cu = ns.CurrentUser
+            try:
+                a = cu.AddressEntry.GetExchangeUser().PrimarySmtpAddress
+                if a:
+                    adr.add(a.lower())
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                if cu.Address and "@" in cu.Address:
+                    adr.add(cu.Address.lower())
+            except Exception:  # noqa: BLE001
+                pass
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            for acc in ns.Accounts:
+                try:
+                    if acc.SmtpAddress:
+                        adr.add(acc.SmtpAddress.lower())
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001
+        pass
+    return adr
+
+
+def _recipient_smtp(r):
+    try:
+        ae = r.AddressEntry
+        if (ae.Type or "").upper() == "EX":
+            try:
+                return (ae.GetExchangeUser().PrimarySmtpAddress or "").lower()
+            except Exception:  # noqa: BLE001
+                pass
+        return (r.Address or "").lower()
+    except Exception:  # noqa: BLE001
+        return (getattr(r, "Address", "") or "").lower()
+
+
+def rolle_eingang(item, eigene):
+    """'Mich' (im An), 'Kopie' (nur CC) oder 'Mich' als Default, wenn unklar."""
+    if not eigene:
+        return "Mich"
+    in_to = in_cc = False
+    try:
+        rec = item.Recipients
+        anzahl = min(int(rec.Count), 60)
+        for i in range(1, anzahl + 1):
+            r = rec.Item(i)
+            smtp = _recipient_smtp(r)
+            if smtp and smtp in eigene:
+                typ = int(getattr(r, "Type", 1))
+                if typ == 1:
+                    in_to = True
+                elif typ == 2:
+                    in_cc = True
+    except Exception:  # noqa: BLE001
+        return "Mich"
+    if in_to:
+        return "Mich"
+    if in_cc:
+        return "Kopie"
+    return "Mich"
+
+
 def sammle_mails(cfg, marker, max_n):
-    """Liest Posteingang (und optional Gesendete) READ-ONLY ab dem Marker."""
     app = outlook_app()
+    eigene = eigene_adressen(app)
     quellen = [(6, "Eingang")]
     if cfg.get("gesendete_einbeziehen", True):
         quellen.append((5, "Gesendet"))
@@ -228,19 +365,16 @@ def sammle_mails(cfg, marker, max_n):
                 betreff = item.Subject or ""
                 if richtung == "Gesendet":
                     partner = "An: " + empfaenger_anzeige(item)
+                    rolle = "VonMir"
                 else:
                     partner = smtp_adresse(item) or "(unbekannt)"
+                    rolle = rolle_eingang(item, eigene)
                 try:
                     auszug = re.sub(r"[ \t]+", " ", (item.Body or "")).strip()[:1200]
                 except Exception:  # noqa: BLE001
                     auszug = ""
-                mails.append({
-                    "richtung": richtung,
-                    "zeit": zeit,
-                    "partner": partner,
-                    "betreff": betreff,
-                    "auszug": auszug,
-                })
+                mails.append({"richtung": richtung, "rolle": rolle, "zeit": zeit,
+                              "partner": partner, "betreff": betreff, "auszug": auszug})
                 gezaehlt += 1
             except Exception as e:  # noqa: BLE001
                 print(f"  Uebersprungen (Lesefehler): {e}")
@@ -250,7 +384,7 @@ def sammle_mails(cfg, marker, max_n):
 
 
 # ---------------------------------------------------------------------------
-# Gemini (Zusammenfassung + Terminerkennung)
+# Gemini
 # ---------------------------------------------------------------------------
 def gemini_json(api_key, system_text, user_text, modell):
     body = {
@@ -277,6 +411,10 @@ def gemini_json(api_key, system_text, user_text, modell):
         raise RuntimeError(f"Unerwartete Gemini-Antwort: {json.dumps(daten)[:300]}") from e
 
 
+_ROLLE_TAG = {"Mich": "[AN MICH]", "Kopie": "[NUR KOPIE - jemand anderes zustaendig]",
+              "VonMir": "[VON MIR gesendet]"}
+
+
 def baue_briefing(mails, projektnamen, cfg, api_key):
     heute = dt.date.today().isoformat()
     system = (
@@ -284,27 +422,36 @@ def baue_briefing(mails, projektnamen, cfg, api_key):
         "den E-Mails ein knappes, sachliches Morgenbriefing auf Deutsch. "
         f"Heutiges Datum: {heute}. Loese relative Angaben (heute, morgen, Freitag, "
         "naechste Woche) anhand des heutigen Datums auf.\n"
+        "Jede Mail ist markiert: [AN MICH] = an mich gerichtet (meine Aufgabe); "
+        "[NUR KOPIE ...] = ich bin nur in Kopie, jemand anderes ist zustaendig; "
+        "[VON MIR gesendet] = von mir verschickt (Nachfassen/Warten auf Antwort).\n"
         "Regeln:\n"
         "- Ordne jeden Punkt einem Projekt aus der Liste zu (nur den Namen); passt "
         "keins, schreibe 'Allgemein'.\n"
+        "- fuer_mich: true wenn die Aufgabe MEINE ist ([AN MICH] oder [VON MIR]); "
+        "false wenn ich nur in Kopie bin ([NUR KOPIE]).\n"
         "- dringlichkeit: 'Hoch' (Maengel, Behinderung, Fristen, Eskalation, Termin "
         "heute/morgen), 'Mittel' (Rechnung, Lieferavis, Antwort noetig), 'Niedrig' (Info).\n"
-        "- termine NUR, wenn ein konkretes Datum oder eine Frist genannt ist. datum als "
-        "YYYY-MM-DD. uhrzeit 'HH:MM' oder leer (dann ganztaegig). dauer_min Standard 60.\n"
+        "- termine NUR bei konkretem Datum/Frist. datum als YYYY-MM-DD; uhrzeit 'HH:MM' "
+        "oder leer (ganztaegig); dauer_min Standard 60; projekt dazuschreiben.\n"
+        "- verschoben: true, wenn die Mail einen BESTEHENDEN Termin aendert/verlegt; "
+        "dann alt_datum (YYYY-MM-DD) wenn erkennbar, sonst leer.\n"
         "- Fasse zusammen, erfinde nichts. Antworte AUSSCHLIESSLICH als JSON nach diesem Schema:\n"
-        '{"ueberblick": "2-4 Saetze Gesamtlage", '
+        '{"ueberblick": "2-4 Saetze", '
         '"punkte": [{"projekt": "", "dringlichkeit": "Hoch|Mittel|Niedrig", '
-        '"richtung": "Eingang|Gesendet", "thema": "", "naechster_schritt": ""}], '
-        '"termine": [{"titel": "", "datum": "YYYY-MM-DD", "uhrzeit": "", '
-        '"dauer_min": 60, "ort": "", "quelle": ""}]}'
+        '"richtung": "Eingang|Gesendet", "fuer_mich": true, "thema": "", '
+        '"naechster_schritt": ""}], '
+        '"termine": [{"projekt": "", "titel": "", "datum": "YYYY-MM-DD", "uhrzeit": "", '
+        '"dauer_min": 60, "ort": "", "quelle": "", "verschoben": false, "alt_datum": ""}]}'
     )
     zeilen = []
     if projektnamen:
         zeilen.append("Bekannte Projekte:\n" + "\n".join(projektnamen) + "\n")
     zeilen.append(f"E-Mails ({len(mails)}):")
     for i, m in enumerate(mails, 1):
+        tag = _ROLLE_TAG.get(m.get("rolle", "Mich"), "")
         zeilen.append(
-            f"[{i}] ({m['richtung']}) {m['zeit']:%Y-%m-%d %H:%M} | {m['partner']} | "
+            f"[{i}] {tag} ({m['richtung']}) {m['zeit']:%Y-%m-%d %H:%M} | {m['partner']} | "
             f"Betreff: {m['betreff']}\nAuszug: {m['auszug']}")
     daten = gemini_json(api_key, system, "\n".join(zeilen), cfg["gemini_modell"])
     daten.setdefault("ueberblick", "")
@@ -314,15 +461,48 @@ def baue_briefing(mails, projektnamen, cfg, api_key):
 
 
 # ---------------------------------------------------------------------------
-# HTML-Briefing (KPC-Design)
+# Terminaenderungen erkennen
 # ---------------------------------------------------------------------------
-def baue_html(brief, mails, zeitraum):
+def markiere_terminaenderungen(termine, state):
+    """Markiert Termine als 'geaendert', wenn ein bekannter Termin (Projekt+Titel)
+    jetzt ein anderes Datum hat - oder die Mail selbst eine Verschiebung meldet."""
+    bekannt = state.get("termine", {})
+    for t in termine:
+        sid = schluessel(t.get("projekt", ""), t.get("titel", ""))
+        t["_key"] = sid
+        alt = bekannt.get(sid)
+        geaendert = False
+        alt_datum = t.get("alt_datum", "") or ""
+        if alt and alt.get("datum") and alt["datum"] != t.get("datum", ""):
+            geaendert = True
+            alt_datum = alt_datum or alt["datum"]
+        if t.get("verschoben"):
+            geaendert = True
+        t["geaendert"] = geaendert
+        t["alt_datum"] = alt_datum
+    return termine
+
+
+# ---------------------------------------------------------------------------
+# HTML-Briefing
+# ---------------------------------------------------------------------------
+def _termin_label(t):
+    txt = f"{t.get('datum', '')}  {t.get('uhrzeit', '') or '(ganztags)'}"
+    if t.get("geaendert"):
+        alt = t.get("alt_datum", "")
+        txt = ("GEAENDERT: " + (f"war {alt} -> " if alt else "") + txt)
+    return txt
+
+
+def baue_html(ueberblick, offene, termine, zeitraum, anzahl_mails):
     def esc(x):
         return html.escape(str(x or ""))
 
+    meine = [t for t in offene if t.get("fuer_mich", True)]
+    info = [t for t in offene if not t.get("fuer_mich", True)]
     nach_gruppe = {g: [] for g in GRUPPEN}
-    for p in brief["punkte"]:
-        nach_gruppe.get(p.get("dringlichkeit", "Niedrig"), nach_gruppe["Niedrig"]).append(p)
+    for t in meine:
+        nach_gruppe.get(t.get("dringlichkeit", "Niedrig"), nach_gruppe["Niedrig"]).append(t)
     stand = dt.datetime.now().strftime("%A, %d.%m.%Y %H:%M")
 
     teile = ["""<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
@@ -341,107 +521,168 @@ def baue_html(brief, mails, zeitraum):
   h2 { font-weight:400; font-size:15px; color:#fff; background:#2d2926;
        padding:6px 10px; margin:18px 0 0 0; border-left:6px solid #c8a882; }
   h2.mittel { background:#6b5040; } h2.niedrig { background:#9a8a78; }
-  h2.termine { background:#3c5a4a; }
+  h2.info { background:#9a8a78; } h2.termine { background:#3c5a4a; }
   table { width:100%; border-collapse:collapse; font-size:12px; }
   th { text-align:left; background:#6b5040; color:#fff; font-weight:400; padding:6px 8px; }
   td { padding:6px 8px; border-bottom:1px solid #e6ddcf; vertical-align:top; }
   tr:nth-child(even) td { background:#faf6ef; }
   .proj { color:#6b5040; font-weight:700; }
+  .chg { color:#8a2f2f; font-weight:700; }
   footer { margin-top:22px; color:#6b5040; font-size:11px;
            border-top:1px solid #c8a882; padding-top:8px; }
 </style></head><body>
 <header><h1>KPC &middot; Morgenbriefing</h1>
 <div class="meta">Stand: """ + esc(stand) + " &nbsp;|&nbsp; Zeitraum: " + esc(zeitraum)
-        + " &nbsp;|&nbsp; Mails: " + str(len(mails)) + """</div></header>"""]
+        + " &nbsp;|&nbsp; Neue Mails: " + str(anzahl_mails)
+        + " &nbsp;|&nbsp; Offene Aufgaben: " + str(len(offene)) + """</div></header>"""]
 
-    if brief.get("ueberblick"):
-        teile.append('<div class="ueberblick">' + esc(brief["ueberblick"]) + "</div>")
+    if ueberblick:
+        teile.append('<div class="ueberblick">' + esc(ueberblick) + "</div>")
 
     klasse = {"Hoch": "", "Mittel": "mittel", "Niedrig": "niedrig"}
-    titel = {"Hoch": "Wichtig / dringend", "Mittel": "Zu erledigen", "Niedrig": "Information"}
+    titel = {"Hoch": "Meine Aufgaben - wichtig / dringend",
+             "Mittel": "Meine Aufgaben - zu erledigen",
+             "Niedrig": "Meine Aufgaben - nachrangig"}
     for g in GRUPPEN:
         rows = nach_gruppe[g]
         if not rows:
             continue
         teile.append(f'<h2 class="{klasse[g]}">{esc(titel[g])} ({len(rows)})</h2>')
-        teile.append("<table><tr><th>Projekt</th><th>Richtung</th><th>Thema</th>"
+        teile.append("<table><tr><th>Projekt</th><th>Thema</th>"
                      "<th>Naechster Schritt</th></tr>")
-        for p in rows:
-            teile.append(
-                "<tr>"
-                f'<td><span class="proj">{esc(p.get("projekt", "Allgemein"))}</span></td>'
-                f"<td>{esc(p.get('richtung', ''))}</td>"
-                f"<td>{esc(p.get('thema', ''))}</td>"
-                f"<td>{esc(p.get('naechster_schritt', ''))}</td>"
-                "</tr>")
+        for t in rows:
+            teile.append("<tr>"
+                         f'<td><span class="proj">{esc(t.get("projekt", "Allgemein"))}</span></td>'
+                         f"<td>{esc(t.get('thema', ''))}</td>"
+                         f"<td>{esc(t.get('schritt', ''))}</td></tr>")
         teile.append("</table>")
 
-    termine = brief.get("termine", [])
+    if info:
+        teile.append(f'<h2 class="info">Nur zur Info - jemand anderes zustaendig ({len(info)})</h2>')
+        teile.append("<table><tr><th>Projekt</th><th>Thema</th><th>Hinweis</th></tr>")
+        for t in info:
+            teile.append("<tr>"
+                         f'<td><span class="proj">{esc(t.get("projekt", "Allgemein"))}</span></td>'
+                         f"<td>{esc(t.get('thema', ''))}</td>"
+                         f"<td>{esc(t.get('schritt', ''))}</td></tr>")
+        teile.append("</table>")
+
     if termine:
         teile.append(f'<h2 class="termine">Termine &amp; Fristen ({len(termine)})</h2>')
-        teile.append("<table><tr><th>Datum</th><th>Uhrzeit</th><th>Titel</th>"
-                     "<th>Ort</th><th>Quelle</th></tr>")
+        teile.append("<table><tr><th>Projekt</th><th>Datum</th><th>Uhrzeit</th>"
+                     "<th>Titel</th><th>Status</th></tr>")
         for t in termine:
-            teile.append(
-                "<tr>"
-                f"<td>{esc(t.get('datum', ''))}</td>"
-                f"<td>{esc(t.get('uhrzeit', '') or 'ganztags')}</td>"
-                f"<td>{esc(t.get('titel', ''))}</td>"
-                f"<td>{esc(t.get('ort', ''))}</td>"
-                f"<td>{esc(t.get('quelle', ''))}</td>"
-                "</tr>")
+            status = '<span class="chg">GEAENDERT</span>' if t.get("geaendert") else "neu"
+            alt = f" (war {esc(t.get('alt_datum'))})" if t.get("geaendert") and t.get("alt_datum") else ""
+            teile.append("<tr>"
+                         f'<td><span class="proj">{esc(t.get("projekt", ""))}</span></td>'
+                         f"<td>{esc(t.get('datum', ''))}</td>"
+                         f"<td>{esc(t.get('uhrzeit', '') or 'ganztags')}</td>"
+                         f"<td>{esc(t.get('titel', ''))}</td>"
+                         f"<td>{status}{alt}</td></tr>")
         teile.append("</table>")
 
-    teile.append('<footer>Erstellt aus Outlook (Eingang + Gesendet), Zusammenfassung '
-                 'durch Gemini. E-Mails wurden nur gelesen; Termine nur nach '
-                 'Bestaetigung im Kalender. Dies ersetzt keine eigene Pruefung.</footer>'
+    teile.append('<footer>Aus Outlook (Eingang + Gesendet), Zusammenfassung durch '
+                 'Gemini. Mails nur gelesen; Termine nur nach Bestaetigung im Kalender. '
+                 'Erledigte Aufgaben werden gemerkt und nicht erneut gezeigt.</footer>'
                  "</body></html>")
     return "".join(teile)
 
 
-def schreibe_html(brief, mails, zeitraum, cfg):
-    ordner = os.path.join(HIER, "Briefings")     # direkt neben dem Programm
+def schreibe_html(ueberblick, offene, termine, zeitraum, anzahl):
+    ordner = os.path.join(HIER, "Briefings")
     os.makedirs(ordner, exist_ok=True)
     pfad = os.path.join(ordner, f"Briefing_{dt.datetime.now():%Y%m%d_%H%M}.html")
     with open(pfad, "w", encoding="utf-8") as f:
-        f.write(baue_html(brief, mails, zeitraum))
+        f.write(baue_html(ueberblick, offene, termine, zeitraum, anzahl))
     return pfad
 
 
-def oeffne_datei(pfad):
-    """Oeffnet die Datei moeglichst zuverlaessig im Standardprogramm/Browser."""
-    try:
-        os.startfile(pfad)   # nur Windows
-        return
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        import webbrowser
-        webbrowser.open("file:///" + os.path.abspath(pfad).replace("\\", "/"))
-    except Exception:  # noqa: BLE001
-        pass
-
-
-# ---------------------------------------------------------------------------
-# Laufendes Protokoll ("Gedaechtnis")
-# ---------------------------------------------------------------------------
-def schreibe_log(brief, mails, cfg):
+def schreibe_log(ueberblick, offene, termine):
     pfad = os.path.join(HIER, "briefing_log.md")
     with open(pfad, "a", encoding="utf-8") as f:
-        f.write(f"\n\n## {dt.datetime.now():%Y-%m-%d %H:%M}  ({len(mails)} Mails)\n\n")
-        if brief.get("ueberblick"):
-            f.write(brief["ueberblick"] + "\n\n")
-        for p in brief.get("punkte", []):
-            f.write(f"- [{p.get('dringlichkeit', '')}] {p.get('projekt', '')}: "
-                    f"{p.get('thema', '')} -> {p.get('naechster_schritt', '')}\n")
-        for t in brief.get("termine", []):
+        f.write(f"\n\n## {dt.datetime.now():%Y-%m-%d %H:%M}\n\n")
+        if ueberblick:
+            f.write(ueberblick + "\n\n")
+        for t in offene:
+            wer = "MIR" if t.get("fuer_mich", True) else "INFO"
+            f.write(f"- [{t.get('dringlichkeit', '')}/{wer}] {t.get('projekt', '')}: "
+                    f"{t.get('thema', '')} -> {t.get('schritt', '')}\n")
+        for t in termine:
             f.write(f"- TERMIN {t.get('datum', '')} {t.get('uhrzeit', '')} "
-                    f"{t.get('titel', '')} ({t.get('quelle', '')})\n")
+                    f"{t.get('projekt', '')} - {t.get('titel', '')}"
+                    f"{' (GEAENDERT)' if t.get('geaendert') else ''}\n")
     return pfad
 
 
 # ---------------------------------------------------------------------------
-# Termine bestaetigen + in Outlook-Kalender eintragen
+# Fenster: Aufgaben abhaken
+# ---------------------------------------------------------------------------
+def abhaken_fenster(offene):
+    """Zeigt offene Aufgaben; gibt die IDs der als erledigt markierten zurueck."""
+    if not offene:
+        return set()
+    try:
+        import tkinter as tk
+        from tkinter import ttk
+    except Exception:  # noqa: BLE001
+        return set()
+    root = tk.Tk()
+    root.title("Aufgaben abhaken - erledigte verschwinden dauerhaft")
+    root.geometry("1000x520")
+    ttk.Label(root, padding=8, text=("Zeile anklicken = als ERLEDIGT markieren. "
+              "Erledigte werden gemerkt und nicht mehr gezeigt.")).pack(anchor="w")
+    rahmen = ttk.Frame(root, padding=(8, 0))
+    rahmen.pack(fill="both", expand=True)
+    cols = ("sel", "dringl", "fuer", "projekt", "thema")
+    tree = ttk.Treeview(rahmen, columns=cols, show="headings", height=18)
+    for c, t, w in (("sel", "erledigt", 70), ("dringl", "Dringl.", 70),
+                    ("fuer", "Fuer", 90), ("projekt", "Projekt", 220),
+                    ("thema", "Thema", 520)):
+        tree.heading(c, text=t)
+        tree.column(c, width=w, anchor="w")
+    sb = ttk.Scrollbar(rahmen, orient="vertical", command=tree.yview)
+    tree.configure(yscrollcommand=sb.set)
+    tree.pack(side="left", fill="both", expand=True)
+    sb.pack(side="right", fill="y")
+
+    checked = {}
+    row_of = {}
+    for t in offene:
+        iid = tree.insert("", "end", values=(
+            "☐", t.get("dringlichkeit", ""),
+            "Mir" if t.get("fuer_mich", True) else "Info",
+            t.get("projekt", ""), t.get("thema", "")))
+        checked[iid] = False
+        row_of[iid] = t
+
+    def klick(event):
+        if tree.identify("region", event.x, event.y) != "cell":
+            return
+        iid = tree.identify_row(event.y)
+        if not iid:
+            return
+        checked[iid] = not checked[iid]
+        vals = list(tree.item(iid, "values"))
+        vals[0] = "☑" if checked[iid] else "☐"
+        tree.item(iid, values=vals)
+    tree.bind("<Button-1>", klick)
+
+    erg = {"ids": set()}
+    leiste = ttk.Frame(root, padding=8)
+    leiste.pack(fill="x")
+
+    def speichern():
+        erg["ids"] = {row_of[i]["id"] for i in tree.get_children() if checked.get(i)}
+        root.destroy()
+    ttk.Button(leiste, text="Erledigte speichern", command=speichern).pack(side="right")
+    ttk.Button(leiste, text="Nichts abhaken", command=root.destroy).pack(side="right", padx=6)
+    root.mainloop()
+    return erg["ids"]
+
+
+# ---------------------------------------------------------------------------
+# Fenster: Termine bestaetigen + in Outlook-Kalender eintragen
 # ---------------------------------------------------------------------------
 def bestaetige_termine(termine):
     if not termine:
@@ -450,20 +691,19 @@ def bestaetige_termine(termine):
         import tkinter as tk
         from tkinter import ttk
     except Exception:  # noqa: BLE001
-        print("Tkinter fehlt - Termine werden nicht eingetragen.")
         return []
     root = tk.Tk()
     root.title("Termine in den Outlook-Kalender uebernehmen")
-    root.geometry("780x440")
+    root.geometry("860x480")
     ttk.Label(root, padding=8, text=("Haken setzen bei den Terminen, die in deinen "
-              "Outlook-Kalender sollen:")).pack(anchor="w")
+              "Outlook-Kalender sollen (das Projekt steht im Betreff):")).pack(anchor="w")
     rahmen = ttk.Frame(root, padding=(10, 0))
     rahmen.pack(fill="both", expand=True)
     eintraege = []
     for t in termine:
         v = tk.BooleanVar(value=True)
-        txt = (f"{t.get('datum', '')}  {t.get('uhrzeit', '') or '(ganztags)'}  -  "
-               f"{t.get('titel', '')}   [{(t.get('quelle', '') or '')[:45]}]")
+        proj = t.get("projekt", "") or "ohne Projekt"
+        txt = f"[{proj}]  {_termin_label(t)}  -  {t.get('titel', '')}"
         ttk.Checkbutton(rahmen, text=txt, variable=v).pack(anchor="w", pady=1)
         eintraege.append((v, t))
     erg = {"ok": False}
@@ -493,7 +733,8 @@ def _start_zeit(datum, uhrzeit):
     return d, False
 
 
-def trage_termine_ein(termine):
+def trage_termine_ein(termine, state):
+    """Legt Termine im Kalender an (Betreff mit Projekt) und merkt sie im Status."""
     if not termine:
         return 0
     import pywintypes
@@ -502,8 +743,10 @@ def trage_termine_ein(termine):
     for t in termine:
         try:
             start, hat_uhrzeit = _start_zeit(t["datum"], t.get("uhrzeit", ""))
+            proj = (t.get("projekt", "") or "").strip()
+            titel = t.get("titel", "Termin")
             appt = app.CreateItem(1)   # 1 = olAppointmentItem
-            appt.Subject = t.get("titel", "Termin")
+            appt.Subject = (f"{proj} - {titel}" if proj else titel)
             appt.Start = pywintypes.Time(start)
             if hat_uhrzeit:
                 appt.Duration = int(t.get("dauer_min") or 60)
@@ -511,10 +754,19 @@ def trage_termine_ein(termine):
                 appt.AllDayEvent = True
             if t.get("ort"):
                 appt.Location = t["ort"]
-            appt.Body = "Aus KPC-Morgenbriefing.\nQuelle: " + (t.get("quelle", "") or "")
+            hinweis = ""
+            if t.get("geaendert"):
+                hinweis = ("\nACHTUNG: geaenderter Termin"
+                           + (f" (war {t.get('alt_datum')})" if t.get("alt_datum") else "")
+                           + " - bitte alten Kalendereintrag pruefen/loeschen.")
+            appt.Body = (f"Projekt: {proj}\nAus KPC-Morgenbriefing.\n"
+                         f"Quelle: {t.get('quelle', '') or ''}{hinweis}")
             appt.ReminderSet = True
             appt.Save()
             n += 1
+            key = t.get("_key") or schluessel(proj, titel)
+            state.setdefault("termine", {})[key] = {
+                "datum": t.get("datum", ""), "titel": titel, "projekt": proj}
         except Exception as e:  # noqa: BLE001
             print(f"  Termin '{t.get('titel', '')}' nicht eingetragen: {e}")
     return n
@@ -536,15 +788,16 @@ def _lauf(args):
                 pass
         _melde("Schluessel fehlt",
                "Es ist noch kein Gemini-Schluessel hinterlegt.\n\n"
-               f"Bitte die Datei .env (liegt neben dem Programm:\n{pfad})\n"
-               "oeffnen und den Schluessel eintragen:\n\n"
-               "  GEMINI_API_KEY=AIza...\n\n"
+               f"Bitte die Datei .env (neben dem Programm:\n{pfad})\n"
+               "oeffnen und eintragen:\n\n  GEMINI_API_KEY=AIza...\n\n"
                "Schluessel holen: https://aistudio.google.com/apikey\n"
-               "Danach das Programm erneut starten.", fehler=True)
+               "Danach erneut starten.", fehler=True)
         return
 
     state = lade_state()
+    store = lade_todos()
     jetzt = dt.datetime.now()
+    heute = jetzt.date().isoformat()
     if args.seit:
         marker = dt.datetime.strptime(args.seit, "%Y-%m-%d")
     elif args.stunden:
@@ -556,32 +809,54 @@ def _lauf(args):
 
     print(f"Lese Outlook ab {marker:%d.%m.%Y %H:%M} ...")
     mails = sammle_mails(cfg, marker, args.max or cfg["max_mails"])
-    if not mails:
-        _melde("Kein neues Briefing",
-               "Es gibt keine neuen Mails seit dem letzten Briefing.")
+
+    ueberblick, termine = "", []
+    if mails:
+        print(f"{len(mails)} Mail(s). Erstelle Briefing mit Gemini ...")
+        brief = baue_briefing(mails, lade_projektnamen(cfg), cfg, key)
+        ueberblick = brief.get("ueberblick", "")
+        merge_todos(store, brief.get("punkte", []), heute)
+        termine = markiere_terminaenderungen(brief.get("termine", []), state)
+    else:
+        ueberblick = "Keine neuen Mails seit dem letzten Lauf."
+
+    offene = [t for t in store["todos"] if t["status"] == "offen"]
+    if not mails and not offene:
+        _melde("Nichts Neues", "Keine neuen Mails und keine offenen Aufgaben.")
         return
 
-    print(f"{len(mails)} Mail(s) gefunden. Erstelle Briefing mit Gemini ...")
-    brief = baue_briefing(mails, lade_projektnamen(cfg), cfg, key)
+    # Aufgaben abhaken
+    if not args.kein_abhaken:
+        erledigt = abhaken_fenster(offene)
+        if erledigt:
+            for t in store["todos"]:
+                if t["id"] in erledigt and t["status"] == "offen":
+                    t["status"] = "erledigt"
+                    t["erledigt_am"] = heute
+    speichere_todos(store)
+    offene = [t for t in store["todos"] if t["status"] == "offen"]
 
     zeitraum = f"{marker:%d.%m.%Y %H:%M} - {jetzt:%d.%m.%Y %H:%M}"
-    html_pfad = schreibe_html(brief, mails, zeitraum, cfg)
-    schreibe_log(brief, mails, cfg)
+    html_pfad = schreibe_html(ueberblick, offene, termine, zeitraum, len(mails))
+    schreibe_log(ueberblick, offene, termine)
     print(f"Briefing: {html_pfad}")
     oeffne_datei(html_pfad)
 
-    state["letzter_lauf"] = jetzt.isoformat()
+    # Termine bestaetigen + eintragen
+    n = 0
+    if termine and not args.kein_kalender:
+        auswahl = bestaetige_termine(termine)
+        n = trage_termine_ein(auswahl, state)
+
+    if mails:
+        state["letzter_lauf"] = jetzt.isoformat()
     speichere_state(state)
 
-    n = 0
-    if not args.kein_kalender:
-        auswahl = bestaetige_termine(brief.get("termine", []))
-        n = trage_termine_ein(auswahl)
-
     _melde("Morgenbriefing fertig",
-           f"{len(mails)} Mail(s) ausgewertet.\n"
-           f"{n} Termin(e) in den Outlook-Kalender eingetragen.\n\n"
-           f"Briefing gespeichert (oeffnet sich im Browser):\n{html_pfad}")
+           f"{len(mails)} neue Mail(s) ausgewertet.\n"
+           f"{len(offene)} offene Aufgabe(n).\n"
+           f"{n} Termin(e) in den Kalender eingetragen.\n\n"
+           f"Briefing:\n{html_pfad}")
 
 
 def main():
@@ -589,14 +864,15 @@ def main():
     ap.add_argument("--seit", default=None, help="Startdatum YYYY-MM-DD.")
     ap.add_argument("--stunden", type=int, default=0, help="Rueckblick in Stunden.")
     ap.add_argument("--kein-kalender", action="store_true", help="Kein Termin-Fenster.")
+    ap.add_argument("--kein-abhaken", action="store_true", help="Kein Aufgaben-Fenster.")
     ap.add_argument("--max", type=int, default=0, help="Maximale Mailanzahl (Debug).")
     args, _ = ap.parse_known_args()
     try:
         _lauf(args)
     except Exception as e:  # noqa: BLE001
         _melde("Fehler", f"Das Briefing konnte nicht erstellt werden:\n\n{e}\n\n"
-               "Tipp: Ist das klassische Outlook geoeffnet und der Schluessel "
-               "in der .env korrekt?", fehler=True)
+               "Tipp: Ist das klassische Outlook geoeffnet und der Schluessel in der "
+               ".env korrekt?", fehler=True)
 
 
 if __name__ == "__main__":

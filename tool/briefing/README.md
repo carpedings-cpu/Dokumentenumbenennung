@@ -1,11 +1,20 @@
 # KPC Morgenbriefing (Outlook, Windows)
 
 Liest morgens deinen Outlook-**Posteingang + Gesendete** (nur lesend), fasst die
-Mails mit **Google Gemini** zu einem **Briefing** zusammen, erkennt **Termine/
-Fristen** und schreibt eine **HTML-Übersicht** (öffnet sich automatisch) sowie ein
-**laufendes Protokoll** (`briefing_log.md`, das „Gedächtnis"). Erkannte Termine
-werden dir in einem Fenster zur Auswahl angeboten und **nur nach Bestätigung** in
-den Outlook-Kalender eingetragen.
+Mails mit **Google Gemini** zu einem **Briefing** zusammen und schreibt eine
+**HTML-Übersicht** (öffnet sich automatisch) plus ein **laufendes Protokoll**
+(`briefing_log.md`).
+
+**Aufgaben (To-dos):** Aus den Mails wird eine fortlaufende Aufgabenliste gepflegt
+(`todos.json`). In einem Fenster kannst du Aufgaben **abhaken** – erledigte werden
+gemerkt und **kommen nicht wieder**.
+
+**Für wen?** Stehst du im **An**, gilt es als deine Aufgabe; bist du nur in
+**Kopie/CC**, wird es separat als *„jemand anderes zuständig"* ausgewiesen.
+
+**Termine:** werden erkannt, **mit Projekt** in den Outlook-Kalender eingetragen
+(Betreff = „Projekt – Titel") und **nur nach Bestätigung**. **Terminänderungen**
+(gleicher Termin, neues Datum) werden als *„GEÄNDERT: war … → jetzt …"* markiert.
 
 ## Sicherheit / Datenschutz
 - **E-Mails werden nur gelesen.** Einzige Schreibaktion: die von dir bestätigten
