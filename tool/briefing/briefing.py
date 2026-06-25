@@ -383,6 +383,52 @@ def sammle_mails(cfg, marker, max_n):
     return mails
 
 
+WOCHENTAGE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+
+
+def lese_kalender_woche(jetzt):
+    """Outlook-Kalender READ-ONLY: Termine von heute bis Sonntag dieser Woche."""
+    heute = jetzt.replace(hour=0, minute=0, second=0, microsecond=0)
+    montag = heute - dt.timedelta(days=heute.weekday())
+    ende = montag + dt.timedelta(days=6, hours=23, minutes=59)
+    ergebnis = []
+    try:
+        app = outlook_app()
+        cal = app.GetNamespace("MAPI").GetDefaultFolder(9)   # 9 = olFolderCalendar
+        items = cal.Items
+        try:
+            items.Sort("[Start]")
+            items.IncludeRecurrences = True
+        except Exception:  # noqa: BLE001
+            pass
+        it = items.GetFirst()
+        zaehler = 0
+        while it is not None and zaehler < 1000:
+            zaehler += 1
+            try:
+                if int(getattr(it, "Class", 0)) == 26:   # 26 = olAppointment
+                    s = py_datetime(it.Start)
+                    if s > ende:
+                        break                              # aufsteigend sortiert -> fertig
+                    if s >= heute:
+                        ganztags = bool(getattr(it, "AllDayEvent", False))
+                        ergebnis.append({
+                            "sort": s,
+                            "wochentag": WOCHENTAGE[s.weekday()],
+                            "datum": s.strftime("%d.%m."),
+                            "uhrzeit": "" if ganztags else s.strftime("%H:%M"),
+                            "titel": it.Subject or "",
+                            "ort": getattr(it, "Location", "") or "",
+                        })
+            except Exception:  # noqa: BLE001
+                pass
+            it = items.GetNext()
+    except Exception as e:  # noqa: BLE001
+        print(f"  Kalender nicht lesbar: {e}")
+    ergebnis.sort(key=lambda x: x["sort"])
+    return ergebnis
+
+
 # ---------------------------------------------------------------------------
 # Gemini
 # ---------------------------------------------------------------------------
@@ -494,7 +540,7 @@ def _termin_label(t):
     return txt
 
 
-def baue_html(ueberblick, offene, termine, zeitraum, anzahl_mails):
+def baue_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl_mails):
     def esc(x):
         return html.escape(str(x or ""))
 
@@ -539,6 +585,19 @@ def baue_html(ueberblick, offene, termine, zeitraum, anzahl_mails):
     if ueberblick:
         teile.append('<div class="ueberblick">' + esc(ueberblick) + "</div>")
 
+    if wochentermine:
+        teile.append(f'<h2 class="termine">Termine diese Woche ({len(wochentermine)})</h2>')
+        teile.append("<table><tr><th>Tag</th><th>Datum</th><th>Uhrzeit</th>"
+                     "<th>Titel</th><th>Ort</th></tr>")
+        for t in wochentermine:
+            teile.append("<tr>"
+                         f"<td>{esc(t['wochentag'])}</td>"
+                         f"<td>{esc(t['datum'])}</td>"
+                         f"<td>{esc(t['uhrzeit'] or 'ganztags')}</td>"
+                         f"<td>{esc(t['titel'])}</td>"
+                         f"<td>{esc(t['ort'])}</td></tr>")
+        teile.append("</table>")
+
     klasse = {"Hoch": "", "Mittel": "mittel", "Niedrig": "niedrig"}
     titel = {"Hoch": "Meine Aufgaben - wichtig / dringend",
              "Mittel": "Meine Aufgaben - zu erledigen",
@@ -568,7 +627,7 @@ def baue_html(ueberblick, offene, termine, zeitraum, anzahl_mails):
         teile.append("</table>")
 
     if termine:
-        teile.append(f'<h2 class="termine">Termine &amp; Fristen ({len(termine)})</h2>')
+        teile.append(f'<h2 class="termine">Neue Termine aus Mails - in Kalender uebernehmen ({len(termine)})</h2>')
         teile.append("<table><tr><th>Projekt</th><th>Datum</th><th>Uhrzeit</th>"
                      "<th>Titel</th><th>Status</th></tr>")
         for t in termine:
@@ -589,12 +648,12 @@ def baue_html(ueberblick, offene, termine, zeitraum, anzahl_mails):
     return "".join(teile)
 
 
-def schreibe_html(ueberblick, offene, termine, zeitraum, anzahl):
+def schreibe_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl):
     ordner = os.path.join(HIER, "Briefings")
     os.makedirs(ordner, exist_ok=True)
     pfad = os.path.join(ordner, f"Briefing_{dt.datetime.now():%Y%m%d_%H%M}.html")
     with open(pfad, "w", encoding="utf-8") as f:
-        f.write(baue_html(ueberblick, offene, termine, zeitraum, anzahl))
+        f.write(baue_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl))
     return pfad
 
 
@@ -868,9 +927,13 @@ def _lauf(args):
     else:
         ueberblick = "Keine neuen Mails seit dem letzten Lauf."
 
+    print("Lese Kalender (Wochenvorschau) ...")
+    wochentermine = lese_kalender_woche(jetzt)
+
     offene = [t for t in store["todos"] if t["status"] == "offen"]
-    if not mails and not offene:
-        _melde("Nichts Neues", "Keine neuen Mails und keine offenen Aufgaben.")
+    if not mails and not offene and not wochentermine:
+        _melde("Nichts Neues",
+               "Keine neuen Mails, keine offenen Aufgaben und keine Termine diese Woche.")
         return
 
     # Aufgaben abhaken
@@ -885,7 +948,7 @@ def _lauf(args):
     offene = [t for t in store["todos"] if t["status"] == "offen"]
 
     zeitraum = f"{marker:%d.%m.%Y %H:%M} - {jetzt:%d.%m.%Y %H:%M}"
-    html_pfad = schreibe_html(ueberblick, offene, termine, zeitraum, len(mails))
+    html_pfad = schreibe_html(ueberblick, offene, termine, wochentermine, zeitraum, len(mails))
     schreibe_log(ueberblick, offene, termine)
     print(f"Briefing: {html_pfad}")
     oeffne_datei(html_pfad)

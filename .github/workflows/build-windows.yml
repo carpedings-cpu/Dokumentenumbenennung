@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Versions-Tag für das Release (z. B. v2.4)"
+        description: "Versions-Tag für das Release (z. B. v2.5)"
         required: false
-        default: "v2.4"
+        default: "v2.5"
   push:
     tags:
       - "v*"
