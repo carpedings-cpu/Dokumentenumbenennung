@@ -119,11 +119,12 @@ def lade_state():
         try:
             d = json.load(open(state_pfad(), encoding="utf-8"))
             d.setdefault("letzter_lauf", None)
-            d.setdefault("termine", {})       # key -> {datum, titel, projekt}
+            d.setdefault("termine", {})            # key -> {datum, titel, projekt}
+            d.setdefault("nachfass_pending", {})   # key -> gesendete Mail, die Antwort erwartet
             return d
         except Exception:  # noqa: BLE001
             pass
-    return {"letzter_lauf": None, "termine": {}}
+    return {"letzter_lauf": None, "termine": {}, "nachfass_pending": {}}
 
 
 def speichere_state(state):
@@ -373,8 +374,17 @@ def sammle_mails(cfg, marker, max_n):
                     auszug = re.sub(r"[ \t]+", " ", (item.Body or "")).strip()[:1200]
                 except Exception:  # noqa: BLE001
                     auszug = ""
+                try:
+                    conv_id = item.ConversationID or ""
+                except Exception:  # noqa: BLE001
+                    conv_id = ""
+                try:
+                    topic = item.ConversationTopic or ""
+                except Exception:  # noqa: BLE001
+                    topic = ""
                 mails.append({"richtung": richtung, "rolle": rolle, "zeit": zeit,
-                              "partner": partner, "betreff": betreff, "auszug": auszug})
+                              "partner": partner, "betreff": betreff, "auszug": auszug,
+                              "conv_id": conv_id, "topic": topic})
                 gezaehlt += 1
             except Exception as e:  # noqa: BLE001
                 print(f"  Uebersprungen (Lesefehler): {e}")
@@ -430,6 +440,115 @@ def lese_kalender_woche(jetzt):
 
 
 # ---------------------------------------------------------------------------
+# Nachfassen: gesendete Mails ohne Antwort (Erinnerung nach 3 Tagen)
+# ---------------------------------------------------------------------------
+def _conv_key(conv_id, topic):
+    if conv_id:
+        return "c:" + conv_id
+    return "t:" + _norm(topic)[:60]
+
+
+def inbox_antwort_index(tage=14, cap=800):
+    """Index der zuletzt im Posteingang eingegangenen Konversationen (READ-ONLY).
+    Schluessel -> spaeteste Eingangszeit; dient der Antwort-Erkennung."""
+    idx = {}
+    try:
+        app = outlook_app()
+        inbox = app.GetNamespace("MAPI").GetDefaultFolder(6)
+        items = inbox.Items
+        try:
+            items.Sort("[ReceivedTime]", True)
+        except Exception:  # noqa: BLE001
+            pass
+        cutoff = dt.datetime.now() - dt.timedelta(days=tage)
+        it = items.GetFirst()
+        n = 0
+        while it is not None and n < cap:
+            n += 1
+            try:
+                if int(getattr(it, "Class", 0)) == 43:
+                    rt = py_datetime(it.ReceivedTime)
+                    if rt < cutoff:
+                        break
+                    try:
+                        cid = it.ConversationID or ""
+                    except Exception:  # noqa: BLE001
+                        cid = ""
+                    try:
+                        topic = it.ConversationTopic or ""
+                    except Exception:  # noqa: BLE001
+                        topic = ""
+                    for k in [x for x in ("c:" + cid if cid else "", "t:" + _norm(topic)[:60] if topic else "") if x]:
+                        if k not in idx or rt > idx[k]:
+                            idx[k] = rt
+            except Exception:  # noqa: BLE001
+                pass
+            it = items.GetNext()
+    except Exception as e:  # noqa: BLE001
+        print(f"  Antwort-Pruefung nicht moeglich: {e}")
+    return idx
+
+
+def registriere_nachfass(state, mails, nachfass_items):
+    """Vermerkt gesendete Mails, die laut KI eine Antwort erwarten."""
+    pend = state.setdefault("nachfass_pending", {})
+    for nf in nachfass_items or []:
+        try:
+            m = mails[int(nf.get("index")) - 1]
+        except Exception:  # noqa: BLE001
+            continue
+        if m.get("richtung") != "Gesendet":
+            continue
+        key = _conv_key(m.get("conv_id", ""), m.get("topic", ""))
+        ges = m["zeit"].isoformat()
+        cur = pend.get(key)
+        if (not cur) or ges > cur.get("gesendet_iso", ""):
+            pend[key] = {
+                "betreff": m.get("betreff", ""),
+                "empfaenger": m.get("partner", ""),
+                "projekt": nf.get("projekt", "") or (cur or {}).get("projekt", "Allgemein"),
+                "gesendet_iso": ges,
+                "topic": _norm(m.get("topic", ""))[:60],
+            }
+
+
+def pruefe_nachfass(state, store, antwort_idx, jetzt, heute):
+    """Schliesst beantwortete Nachfass-Eintraege; meldet die seit 3+ Tagen offenen.
+    Erstellt fuer faellige eine abhakbare Aufgabe (typ 'nachfass')."""
+    pend = state.setdefault("nachfass_pending", {})
+    bekannt = {t["id"] for t in store["todos"]}
+    for key, e in list(pend.items()):
+        gesendet = dt.datetime.fromisoformat(e["gesendet_iso"])
+        rt = antwort_idx.get(key)
+        if rt is None and e.get("topic"):
+            rt = antwort_idx.get("t:" + e["topic"])
+        if rt and rt > gesendet:                      # Antwort gekommen -> erledigt
+            del pend[key]
+            tid = "nf|" + key
+            for t in store["todos"]:
+                if t["id"] == tid and t["status"] == "offen":
+                    t["status"] = "erledigt"
+                    t["erledigt_am"] = heute
+            continue
+        tage = (jetzt - gesendet).days
+        if tage >= 3:
+            tid = "nf|" + key
+            if tid in bekannt:
+                continue
+            bekannt.add(tid)
+            store["todos"].append({
+                "id": tid,
+                "projekt": e.get("projekt", "Allgemein"),
+                "thema": f"Nachfassen: {e.get('betreff', '')}",
+                "schritt": f"Antwort ausstehend von {e.get('empfaenger', '')} "
+                           f"(gesendet vor {tage} Tagen).",
+                "dringlichkeit": "Hoch" if tage >= 7 else "Mittel",
+                "fuer_mich": True, "richtung": "Gesendet", "typ": "nachfass",
+                "status": "offen", "erstellt": heute, "erledigt_am": None,
+            })
+
+
+# ---------------------------------------------------------------------------
 # Gemini
 # ---------------------------------------------------------------------------
 def gemini_json(api_key, system_text, user_text, modell):
@@ -482,13 +601,17 @@ def baue_briefing(mails, projektnamen, cfg, api_key):
         "oder leer (ganztaegig); dauer_min Standard 60; projekt dazuschreiben.\n"
         "- verschoben: true, wenn die Mail einen BESTEHENDEN Termin aendert/verlegt; "
         "dann alt_datum (YYYY-MM-DD) wenn erkennbar, sonst leer.\n"
+        "- nachfass: Liste der Nummern [i] von MIR gesendeten Mails ([VON MIR]), die "
+        "eine ANTWORT erwarten (Frage, Bitte, Anforderung, Termin-/Freigabe-Wunsch an "
+        "den Empfaenger). Reine Infos/Bestaetigungen NICHT aufnehmen.\n"
         "- Fasse zusammen, erfinde nichts. Antworte AUSSCHLIESSLICH als JSON nach diesem Schema:\n"
         '{"ueberblick": "2-4 Saetze", '
         '"punkte": [{"projekt": "", "dringlichkeit": "Hoch|Mittel|Niedrig", '
         '"richtung": "Eingang|Gesendet", "fuer_mich": true, "thema": "", '
         '"naechster_schritt": ""}], '
         '"termine": [{"projekt": "", "titel": "", "datum": "YYYY-MM-DD", "uhrzeit": "", '
-        '"dauer_min": 60, "ort": "", "quelle": "", "verschoben": false, "alt_datum": ""}]}'
+        '"dauer_min": 60, "ort": "", "quelle": "", "verschoben": false, "alt_datum": ""}], '
+        '"nachfass": [{"index": 1, "projekt": ""}]}'
     )
     zeilen = []
     if projektnamen:
@@ -503,6 +626,7 @@ def baue_briefing(mails, projektnamen, cfg, api_key):
     daten.setdefault("ueberblick", "")
     daten.setdefault("punkte", [])
     daten.setdefault("termine", [])
+    daten.setdefault("nachfass", [])
     return daten
 
 
@@ -544,8 +668,9 @@ def baue_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl_mails
     def esc(x):
         return html.escape(str(x or ""))
 
-    meine = [t for t in offene if t.get("fuer_mich", True)]
-    info = [t for t in offene if not t.get("fuer_mich", True)]
+    nachfass = [t for t in offene if t.get("typ") == "nachfass"]
+    meine = [t for t in offene if t.get("fuer_mich", True) and t.get("typ") != "nachfass"]
+    info = [t for t in offene if not t.get("fuer_mich", True) and t.get("typ") != "nachfass"]
     nach_gruppe = {g: [] for g in GRUPPEN}
     for t in meine:
         nach_gruppe.get(t.get("dringlichkeit", "Niedrig"), nach_gruppe["Niedrig"]).append(t)
@@ -568,6 +693,7 @@ def baue_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl_mails
        padding:6px 10px; margin:18px 0 0 0; border-left:6px solid #c8a882; }
   h2.mittel { background:#6b5040; } h2.niedrig { background:#9a8a78; }
   h2.info { background:#9a8a78; } h2.termine { background:#3c5a4a; }
+  h2.chghdr { background:#8a2f2f; }
   table { width:100%; border-collapse:collapse; font-size:12px; }
   th { text-align:left; background:#6b5040; color:#fff; font-weight:400; padding:6px 8px; }
   td { padding:6px 8px; border-bottom:1px solid #e6ddcf; vertical-align:top; }
@@ -596,6 +722,16 @@ def baue_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl_mails
                          f"<td>{esc(t['uhrzeit'] or 'ganztags')}</td>"
                          f"<td>{esc(t['titel'])}</td>"
                          f"<td>{esc(t['ort'])}</td></tr>")
+        teile.append("</table>")
+
+    if nachfass:
+        teile.append(f'<h2 class="chghdr">Nachfassen - Antwort ausstehend (seit 3+ Tagen) ({len(nachfass)})</h2>')
+        teile.append("<table><tr><th>Projekt</th><th>Betreff</th><th>Status</th></tr>")
+        for t in nachfass:
+            teile.append("<tr>"
+                         f'<td><span class="proj">{esc(t.get("projekt", "Allgemein"))}</span></td>'
+                         f"<td>{esc(t.get('thema', '').replace('Nachfassen: ', ''))}</td>"
+                         f"<td>{esc(t.get('schritt', ''))}</td></tr>")
         teile.append("</table>")
 
     klasse = {"Hoch": "", "Mittel": "mittel", "Niedrig": "niedrig"}
@@ -924,8 +1060,12 @@ def _lauf(args):
         ueberblick = brief.get("ueberblick", "")
         merge_todos(store, brief.get("punkte", []), heute)
         termine = markiere_terminaenderungen(brief.get("termine", []), state)
+        registriere_nachfass(state, mails, brief.get("nachfass", []))
     else:
         ueberblick = "Keine neuen Mails seit dem letzten Lauf."
+
+    print("Pruefe offene Antworten (Nachfassen) ...")
+    pruefe_nachfass(state, store, inbox_antwort_index(), jetzt, heute)
 
     print("Lese Kalender (Wochenvorschau) ...")
     wochentermine = lese_kalender_woche(jetzt)

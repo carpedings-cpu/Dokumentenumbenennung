@@ -12,6 +12,12 @@ gemerkt und **kommen nicht wieder**.
 **Für wen?** Stehst du im **An**, gilt es als deine Aufgabe; bist du nur in
 **Kopie/CC**, wird es separat als *„jemand anderes zuständig"* ausgewiesen.
 
+**Nachfassen:** Von dir gesendete Mails, die eine **Antwort erwarten**, werden
+gemerkt. Kommt nach **3 Tagen** keine Antwort (geprüft am selben Mail-Verlauf im
+Posteingang), erscheinen sie als **Erinnerung** („Nachfassen – Antwort
+ausstehend"). Sobald eine Antwort eintrifft, verschwindet die Erinnerung
+automatisch; manuell abhaken geht auch.
+
 **Termine:** werden erkannt, **mit Projekt** in den Outlook-Kalender eingetragen
 (Betreff = „Projekt – Titel") und **nur nach Bestätigung**. **Terminänderungen**
 (gleicher Termin, neues Datum) werden als *„GEÄNDERT: war … → jetzt …"* markiert.
