@@ -45,10 +45,20 @@ from pdf_text import extract_pdf_text  # noqa: E402
 LESBARE_TEXT_ENDUNGEN = {".pdf", ".txt", ".md"}
 ANALYSIERBAR = LESBARE_TEXT_ENDUNGEN | {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
-# Standard-Projektbasis (enthaelt die Projekt-Unterordner). Identisch zur Triage;
-# im Programm aenderbar und wird automatisch korrigiert, wenn ein Ordner namens
+# Standard-Projektbasis (enthaelt die Projekt-Unterordner). Nutzt den Desktop des
+# jeweiligen Nutzers, damit das Programm bei jedem Kollegen laeuft. Im Programm
+# aenderbar und wird automatisch korrigiert, wenn ein Ordner namens
 # "00_Posteingang" eingelesen wird (dann = dessen uebergeordneter Ordner).
-STANDARD_BASIS = r"C:\Users\ziegler\Desktop\Dokumentenumbenennung"
+def _standard_basis():
+    heim = os.path.expanduser("~")
+    for desktop in (os.path.join(heim, "Desktop"),
+                    os.path.join(heim, "OneDrive", "Desktop")):
+        if os.path.isdir(desktop):
+            return os.path.join(desktop, "Dokumentenumbenennung")
+    return os.path.join(heim, "Desktop", "Dokumentenumbenennung")
+
+
+STANDARD_BASIS = _standard_basis()
 EINGANG_ORDNER = "00_Posteingang"
 
 
