@@ -1,49 +1,20 @@
-# Dokumenten-Umbenenner – Kurzanleitung
+# Dokumenten-Umbenenner – in 3 Schritten
 
-Benennt Dokumente, Scans und E-Mails automatisch nach der KPC-Verfahrensanweisung
-*„Dokumentenbenennung & Versionierung"* um und sortiert sie in die Projektordner.
-**Kein Zusatzprogramm nötig** – einfach die `.exe` starten.
+Benennt Dateien, Scans und E-Mails automatisch richtig. **Kein Zusatzprogramm nötig.**
 
----
+### 1. Dateien laden
+Programm starten → **„Dateien wählen…"** – oder Dateien / E-Mails ins Fenster ziehen.
+*(Beim ersten Start meldet Windows evtl. „geschützt" → „Weitere Informationen" → „Trotzdem ausführen".)*
 
-## 1. Starten
-1. **`Dokumenten-Umbenenner.exe`** doppelklicken.
-2. Windows meldet evtl. *„Der Computer wurde geschützt"* → **„Weitere Informationen"**
-   → **„Trotzdem ausführen"**. (Nur beim ersten Mal.)
+### 2. Prüfen
+In der Liste steht rechts der **neue Name**. Passt etwas nicht? Zeile anklicken und unten anpassen.
 
-## 2. Dokumente laden (ein Weg genügt)
-- **„Dateien wählen…"** anklicken und Dateien auswählen, **oder**
-- Dateien/E-Mails einfach **ins Fenster ziehen**, **oder**
-- oben einen **Ordner** wählen → **„Einlesen"**.
-
-> E-Mails (`.eml`/`.msg`) werden automatisch zerlegt: **Mailtext als PDF** +
-> **echte Anhänge** (Signatur-Bildchen werden weggelassen).
-
-## 3. Prüfen und umbenennen
-1. In der Tabelle siehst du je Datei **„Neu (Vorschau)"** (neuer Name) und
-   **„Projektordner"** (wohin sie kommt).
-2. Stimmt etwas nicht: Zeile anklicken → unten die **Felder** korrigieren →
-   **„Vorschau aktualisieren"**.
-3. Unten **„Alle umbenennen"** → bestätigen. **Fertig.**
-
-## 4. In Projektordner einsortieren (optional, standardmäßig an)
-- **Projektbasis** = der Ordner, in dem deine Projektordner liegen. Liest du den
-  Übergabeordner `00_Posteingang` ein, stellt sich das automatisch richtig ein –
-  sonst per **„Durchsuchen…"** deinen Projektordner wählen.
-- Haken **„fehlende Projektordner anlegen"**: legt einen fehlenden Projektordner
-  automatisch an (Name aus der Projektliste).
-
-## Offline oder mit KI-Erkennung
-- **Offline** (Standard): erkennt **Datum** und **Typ** automatisch, den Rest
-  bestätigst du. Kein Internet, kein Schlüssel nötig.
-- **Claude-API / Gemini-API**: erkennt **alle Felder automatisch** (auch bei
-  Scans). Dazu oben den Modus anklicken und einen **eigenen API-Schlüssel**
-  eintragen.
+### 3. Umbenennen
+Unten auf den grünen Knopf **„Alle umbenennen"** – fertig. Es wird nichts überschrieben.
 
 ---
 
-**Gut zu wissen:** Es wird **nichts überschrieben** (bei gleichem Namen `-02`,
-`-03`, …), die **Dateiendung bleibt** erhalten. Nichts wird ins Internet geladen
-(außer im API-Modus das jeweilige Dokument zur Erkennung).
+**Kein Schlüssel nötig** – läuft ohne Internet und ohne Konto. Nur wer **Scans** automatisch
+erkennen lassen will, trägt unter **⚙ Einstellungen** einen KI-Schlüssel ein (optional).
 
-*Fragen? → [hier deinen Namen/Kontakt eintragen]*
+*Fragen? → [Name / Kontakt eintragen]*

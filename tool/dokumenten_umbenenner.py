@@ -100,8 +100,9 @@ def lade_va_regeln():
 class App:
     def __init__(self, root):
         self.root = root
-        root.title("Dokumenten-Umbenenner – KPC VA 1.1")
-        root.geometry("1080x720")
+        root.title("Dokumenten-Umbenenner")
+        root.geometry("1000x760")
+        root.minsize(880, 620)
 
         self.ordner = tk.StringVar()
         self.modus = tk.StringVar(value="offline")
@@ -113,11 +114,14 @@ class App:
         self._pz_base = None    # Cache: zuletzt geladene Projektbasis
         self._pz_cache = None   # Cache: Projektliste
 
+        self._stil()
+        self._baue_header()
         self._baue_oben()
         self._baue_tabelle()
         self._baue_details()
         self._baue_unten()
         self._aktiviere_dnd()
+        self._modus_geaendert()
 
     def _aktiviere_dnd(self):
         """Registriert das Fenster fuer Drag & Drop; meldet Erfolg/Misserfolg."""
@@ -136,52 +140,124 @@ class App:
                            "– bitte 'Dateien wählen…' nutzen.")
 
     # ----------------------------------------------------------------- UI
+    # KPC-Farben
+    BG = "#f5efe6"
+    DARK = "#2d2926"
+    GOLD = "#c8a882"
+    BROWN = "#6b5040"
+    GREEN = "#3c5a4a"
+
+    def _stil(self):
+        self.root.configure(bg=self.BG)
+        st = ttk.Style()
+        try:
+            st.theme_use("clam")
+        except Exception:  # noqa: BLE001
+            pass
+        st.configure(".", background=self.BG, foreground=self.DARK, font=("Segoe UI", 10))
+        st.configure("TFrame", background=self.BG)
+        st.configure("TLabel", background=self.BG, foreground=self.DARK)
+        st.configure("TCheckbutton", background=self.BG)
+        st.configure("TRadiobutton", background=self.BG)
+        st.configure("TLabelframe", background=self.BG, bordercolor=self.GOLD)
+        st.configure("TLabelframe.Label", background=self.BG, foreground=self.BROWN,
+                     font=("Segoe UI", 10, "bold"))
+        st.configure("Header.TFrame", background=self.DARK)
+        st.configure("Header.TLabel", background=self.DARK, foreground="#ffffff")
+        st.configure("Sub.TLabel", background=self.DARK, foreground=self.GOLD)
+        st.configure("Step.TLabel", foreground=self.BROWN, font=("Segoe UI", 12, "bold"))
+        st.configure("Hint.TLabel", foreground=self.BROWN)
+        st.configure("TButton", padding=(10, 6))
+        st.configure("Accent.TButton", padding=(14, 8), font=("Segoe UI", 10, "bold"))
+        st.map("Accent.TButton",
+               background=[("active", "#b8975f"), ("!disabled", self.GOLD)],
+               foreground=[("!disabled", self.DARK)])
+        st.configure("Big.TButton", padding=(20, 12), font=("Segoe UI", 12, "bold"))
+        st.map("Big.TButton",
+               background=[("active", "#2f4a3c"), ("!disabled", self.GREEN)],
+               foreground=[("!disabled", "#ffffff")])
+        st.configure("Treeview", rowheight=25, fieldbackground="#ffffff", background="#ffffff")
+        st.configure("Treeview.Heading", background=self.BROWN, foreground="#ffffff",
+                     font=("Segoe UI", 9, "bold"), padding=4)
+
+    def _baue_header(self):
+        h = ttk.Frame(self.root, style="Header.TFrame", padding=(18, 12))
+        h.pack(fill="x")
+        ttk.Label(h, text="Dokumenten-Umbenenner", style="Header.TLabel",
+                  font=("Segoe UI", 18, "bold")).pack(anchor="w")
+        ttk.Label(h, text="Dateien laden   ›   prüfen   ›   umbenennen",
+                  style="Sub.TLabel", font=("Segoe UI", 10)).pack(anchor="w")
+
     def _baue_oben(self):
-        f = ttk.Frame(self.root, padding=8)
-        f.pack(fill="x")
-        ttk.Label(f, text="Ordner:").pack(side="left")
-        ttk.Entry(f, textvariable=self.ordner, width=70).pack(side="left", padx=4)
-        ttk.Button(f, text="Durchsuchen…", command=self.waehle_ordner).pack(side="left")
-        ttk.Button(f, text="Einlesen", command=self.einlesen).pack(side="left", padx=4)
-        ttk.Button(f, text="Dateien wählen…", command=self.waehle_dateien).pack(side="left")
-        ttk.Button(f, text="Liste leeren", command=self._leeren).pack(side="left", padx=4)
+        self._oben = ttk.Frame(self.root, padding=(16, 12, 16, 4))
+        self._oben.pack(fill="x")
+        ttk.Label(self._oben, text="1.  Dateien laden", style="Step.TLabel").pack(anchor="w")
+        r = ttk.Frame(self._oben)
+        r.pack(fill="x", pady=(6, 0))
+        ttk.Button(r, text="Dateien wählen…", style="Accent.TButton",
+                   command=self.waehle_dateien).pack(side="left")
+        ttk.Button(r, text="Ordner…", command=self._ordner_und_einlesen).pack(side="left", padx=6)
+        ttk.Button(r, text="Liste leeren", command=self._leeren).pack(side="left")
+        hinweis = ("…oder Dateien / E-Mails einfach ins Fenster ziehen."
+                   if _HAS_DND else "Tipp: mit dem Knopf Ordner liest du einen ganzen Ordner ein.")
+        ttk.Label(r, text=hinweis, style="Hint.TLabel").pack(side="left", padx=12)
+        ttk.Button(r, text="⚙ Einstellungen", command=self._toggle_einstellungen).pack(side="right")
 
-        m = ttk.Frame(self.root, padding=(8, 0))
-        m.pack(fill="x")
-        ttk.Label(m, text="Modus:").pack(side="left")
-        ttk.Radiobutton(m, text="Offline (regelbasiert)", value="offline",
-                        variable=self.modus).pack(side="left")
-        ttk.Radiobutton(m, text="Claude-API", value="claude",
-                        variable=self.modus).pack(side="left", padx=(4, 0))
-        ttk.Radiobutton(m, text="Gemini-API", value="gemini",
-                        variable=self.modus).pack(side="left", padx=(4, 12))
-        ttk.Label(m, text="API-Schlüssel:").pack(side="left")
-        ttk.Entry(m, textvariable=self.api_key, width=32, show="•").pack(side="left", padx=4)
-
-        s = ttk.Frame(self.root, padding=(8, 2))
-        s.pack(fill="x")
-        ttk.Checkbutton(s, text="In Projektordner einsortieren",
+        # Einstellungen – standardmaessig versteckt
+        self.einstell = ttk.Frame(self.root, padding=(16, 0, 16, 4))
+        box = ttk.LabelFrame(self.einstell, text="Einstellungen", padding=10)
+        box.pack(fill="x")
+        self._z1 = ttk.Frame(box)
+        self._z1.pack(fill="x", pady=2)
+        ttk.Label(self._z1, text="Erkennung:").pack(side="left")
+        for txt, val in (("Offline (ohne Schlüssel)", "offline"),
+                         ("Claude-KI", "claude"), ("Gemini-KI", "gemini")):
+            ttk.Radiobutton(self._z1, text=txt, value=val, variable=self.modus,
+                            command=self._modus_geaendert).pack(side="left", padx=(6, 0))
+        self.key_row = ttk.Frame(box)
+        ttk.Label(self.key_row, text="API-Schlüssel:").pack(side="left")
+        ttk.Entry(self.key_row, textvariable=self.api_key, width=42, show="•").pack(side="left", padx=6)
+        z2 = ttk.Frame(box)
+        z2.pack(fill="x", pady=2)
+        ttk.Checkbutton(z2, text="In Projektordner einsortieren",
                         variable=self.einsortieren).pack(side="left")
-        ttk.Checkbutton(s, text="fehlende Projektordner anlegen",
-                        variable=self.ordner_anlegen).pack(side="left", padx=(8, 0))
-        ttk.Label(s, text="Projektbasis:").pack(side="left", padx=(12, 2))
-        ttk.Entry(s, textvariable=self.projektbasis, width=44).pack(side="left", padx=2)
-        ttk.Button(s, text="Durchsuchen…", command=self.waehle_basis).pack(side="left")
+        ttk.Checkbutton(z2, text="fehlende Ordner anlegen",
+                        variable=self.ordner_anlegen).pack(side="left", padx=10)
+        z3 = ttk.Frame(box)
+        z3.pack(fill="x", pady=2)
+        ttk.Label(z3, text="Projektbasis:").pack(side="left")
+        ttk.Entry(z3, textvariable=self.projektbasis, width=46).pack(side="left", padx=6)
+        ttk.Button(z3, text="Durchsuchen…", command=self.waehle_basis).pack(side="left")
+
+    def _toggle_einstellungen(self):
+        if self.einstell.winfo_manager():
+            self.einstell.pack_forget()
+        else:
+            self.einstell.pack(fill="x", after=self._oben)
+
+    def _modus_geaendert(self):
+        if self.modus.get() in ("claude", "gemini"):
+            self.key_row.pack(fill="x", pady=2, after=self._z1)
+        else:
+            self.key_row.pack_forget()
+
+    def _ordner_und_einlesen(self):
+        d = filedialog.askdirectory(title="Ordner mit Dokumenten wählen")
+        if d:
+            self.ordner.set(d)
+            self._basis_aus_eingang(d)
+            self._add_files([os.path.join(d, n) for n in self._dateien()], anhaengen=False)
 
     def _baue_tabelle(self):
-        hinweis = ("Reinziehen ODER 'Dateien wählen…' (auch .eml/.msg). E-Mails werden "
-                   "in Mailtext-PDF + Anhänge zerlegt. Outlook-Mail ggf. erst als .msg "
-                   "speichern.") if _HAS_DND else \
-                  ("'Dateien wählen…' oder Ordner wählen + 'Einlesen' (auch .eml/.msg).")
-        ttk.Label(self.root, text=hinweis).pack(anchor="w", padx=10, pady=(0, 2))
-
-        f = ttk.Frame(self.root, padding=8)
+        ttk.Label(self.root, text="2.  Prüfen", style="Step.TLabel").pack(
+            anchor="w", padx=16, pady=(8, 0))
+        f = ttk.Frame(self.root, padding=(16, 4, 16, 4))
         f.pack(fill="both", expand=True)
         cols = ("alt", "typ", "datum", "projekt", "neu")
-        self.tree = ttk.Treeview(f, columns=cols, show="headings", height=12)
-        for c, t, w in (("alt", "Alt (Ist)", 300), ("typ", "Typ", 130),
-                        ("datum", "Datum", 70), ("projekt", "Projektordner", 200),
-                        ("neu", "Neu (Vorschau)", 360)):
+        self.tree = ttk.Treeview(f, columns=cols, show="headings", height=11)
+        for c, t, w in (("alt", "Datei (jetzt)", 280), ("typ", "Typ", 130),
+                        ("datum", "Datum", 70), ("projekt", "Projektordner", 190),
+                        ("neu", "Neuer Name", 360)):
             self.tree.heading(c, text=t)
             self.tree.column(c, width=w, anchor="w")
         sb = ttk.Scrollbar(f, orient="vertical", command=self.tree.yview)
@@ -191,9 +267,6 @@ class App:
         self.tree.bind("<<TreeviewSelect>>", self.zeige_auswahl)
 
     def _baue_details(self):
-        f = ttk.LabelFrame(self.root, text="Felder der ausgewählten Datei", padding=8)
-        f.pack(fill="x", padx=8)
-
         self.var = {k: tk.StringVar() for k in (
             "datum", "quelle", "phase", "dokumententyp", "bezeichnung", "version",
             "projekt",
@@ -201,38 +274,61 @@ class App:
             "geschoss", "plannr", "index", "status")}
         self.ist_plan = tk.BooleanVar(value=False)
 
-        # Standardfelder
-        std = ttk.Frame(f)
-        std.pack(fill="x")
-        self._feld(std, "Datum (JJMMTT)", "datum", 0, 0, 10)
-        self._feld(std, "Quelle", "quelle", 0, 2, 16)
-        self._feld(std, "Phase", "phase", 0, 4, 14)
-        ttk.Label(std, text="Dokumententyp").grid(row=1, column=0, sticky="w", padx=4)
-        cb = ttk.Combobox(std, textvariable=self.var["dokumententyp"],
-                          values=VA.DOKUMENTTYPEN, width=28)
-        cb.grid(row=1, column=1, sticky="w", padx=4, pady=2)
-        self._feld(std, "Bezeichnung", "bezeichnung", 1, 2, 24)
-        self._feld(std, "Version", "version", 1, 4, 10)
-        self._feld(std, "Projektordner (Ablage)", "projekt", 2, 0, 40)
+        f = ttk.LabelFrame(self.root, text="Zeile anklicken und Felder prüfen",
+                           padding=10)
+        f.pack(fill="x", padx=16, pady=(2, 0))
 
-        ttk.Checkbutton(f, text="Planunterlage (eigenes Schema, Kapitel 6)",
-                        variable=self.ist_plan,
-                        command=self.aktualisiere_vorschau).pack(anchor="w", pady=(6, 0))
+        # Die wichtigsten Felder
+        self._std = ttk.Frame(f)
+        self._std.pack(fill="x")
+        self._feld(self._std, "Datum (JJMMTT)", "datum", 0, 0, 12)
+        ttk.Label(self._std, text="Dokumententyp").grid(row=0, column=2, sticky="w", padx=4)
+        ttk.Combobox(self._std, textvariable=self.var["dokumententyp"],
+                     values=VA.DOKUMENTTYPEN, width=26).grid(row=0, column=3, sticky="w",
+                                                             padx=4, pady=2)
+        self._feld(self._std, "Bezeichnung", "bezeichnung", 1, 0, 30)
+        self._feld(self._std, "Projektordner", "projekt", 1, 2, 26)
 
-        # Planfelder
-        pl = ttk.Frame(f)
-        pl.pack(fill="x")
-        self._feld(pl, "Projektnr.", "projektnr", 0, 0, 8)
-        self._feld(pl, "Auftragsart (10/20)", "auftragsart", 0, 2, 6)
-        self._feld(pl, "Leistungsphase (1–9)", "leistungsphase", 0, 4, 6)
-        self._feld(pl, "Planinhalt (A,E,…)", "planinhalt", 0, 6, 6)
-        self._feld(pl, "Geschoss (EG,01,…)", "geschoss", 1, 0, 8)
-        self._feld(pl, "Plannr. (01)", "plannr", 1, 2, 6)
-        self._feld(pl, "Index (A,B,…)", "index", 1, 4, 6)
-        self._feld(pl, "Status (V/PL/F)", "status", 1, 6, 6)
+        # Selten gebraucht – erst auf Klick sichtbar
+        self.mehr = ttk.Frame(f)
+        self._feld(self.mehr, "Quelle", "quelle", 0, 0, 16)
+        self._feld(self.mehr, "Phase", "phase", 0, 2, 14)
+        self._feld(self.mehr, "Version", "version", 0, 4, 10)
 
-        ttk.Button(f, text="Vorschau aktualisieren",
-                   command=self.aktualisiere_vorschau).pack(anchor="w", pady=6)
+        self._toggles = ttk.Frame(f)
+        self._toggles.pack(fill="x", pady=(8, 0))
+        self.btn_mehr = ttk.Button(self._toggles, text="▸ Mehr Felder", command=self._toggle_mehr)
+        self.btn_mehr.pack(side="left")
+        ttk.Checkbutton(self._toggles, text="Planunterlage (eigenes Schema)",
+                        variable=self.ist_plan, command=self._toggle_plan).pack(side="left", padx=14)
+        ttk.Button(self._toggles, text="Vorschau aktualisieren", style="Accent.TButton",
+                   command=self.aktualisiere_vorschau).pack(side="right")
+
+        # Planfelder – erst bei Haken sichtbar
+        self.plan = ttk.Frame(f)
+        self._feld(self.plan, "Projektnr.", "projektnr", 0, 0, 8)
+        self._feld(self.plan, "Auftragsart (10/20)", "auftragsart", 0, 2, 6)
+        self._feld(self.plan, "Leistungsphase (1–9)", "leistungsphase", 0, 4, 6)
+        self._feld(self.plan, "Planinhalt (A,E,…)", "planinhalt", 0, 6, 6)
+        self._feld(self.plan, "Geschoss (EG,01,…)", "geschoss", 1, 0, 8)
+        self._feld(self.plan, "Plannr. (01)", "plannr", 1, 2, 6)
+        self._feld(self.plan, "Index (A,B,…)", "index", 1, 4, 6)
+        self._feld(self.plan, "Status (V/PL/F)", "status", 1, 6, 6)
+
+    def _toggle_mehr(self):
+        if self.mehr.winfo_manager():
+            self.mehr.pack_forget()
+            self.btn_mehr.config(text="▸ Mehr Felder")
+        else:
+            self.mehr.pack(fill="x", after=self._std)
+            self.btn_mehr.config(text="▾ Weniger Felder")
+
+    def _toggle_plan(self):
+        if self.ist_plan.get():
+            self.plan.pack(fill="x", after=self._toggles)
+        else:
+            self.plan.pack_forget()
+        self.aktualisiere_vorschau()
 
     def _feld(self, parent, label, key, r, c, width):
         ttk.Label(parent, text=label).grid(row=r, column=c, sticky="w", padx=4)
@@ -240,15 +336,32 @@ class App:
             .grid(row=r, column=c + 1, sticky="w", padx=4, pady=2)
 
     def _baue_unten(self):
-        f = ttk.Frame(self.root, padding=8)
+        f = ttk.Frame(self.root, padding=(16, 10))
         f.pack(fill="x")
-        ttk.Button(f, text="Alle umbenennen", command=self.umbenennen)\
-            .pack(side="left")
+        ttk.Label(f, text="3.  Umbenennen", style="Step.TLabel").grid(
+            row=0, column=0, sticky="w")
+        ttk.Button(f, text="✓  Alle umbenennen", style="Big.TButton",
+                   command=self.umbenennen).grid(row=1, column=0, sticky="w", pady=(4, 0))
         self.status = tk.StringVar(value="Bereit.")
-        ttk.Label(f, textvariable=self.status).pack(side="left", padx=12)
+        ttk.Label(f, textvariable=self.status, style="Hint.TLabel").grid(
+            row=1, column=1, sticky="w", padx=14)
+        self.btn_log = ttk.Button(f, text="▸ Protokoll", command=self._toggle_log)
+        self.btn_log.grid(row=1, column=2, sticky="e")
+        f.columnconfigure(1, weight=1)
 
-        self.log = tk.Text(self.root, height=7)
-        self.log.pack(fill="both", expand=False, padx=8, pady=(0, 8))
+        self.log_frame = ttk.Frame(self.root, padding=(16, 0, 16, 8))
+        self.log = tk.Text(self.log_frame, height=6, bg="#ffffff", relief="flat",
+                           borderwidth=1, highlightthickness=1,
+                           highlightbackground=self.GOLD, font=("Consolas", 9))
+        self.log.pack(fill="both", expand=True)
+
+    def _toggle_log(self):
+        if self.log_frame.winfo_manager():
+            self.log_frame.pack_forget()
+            self.btn_log.config(text="▸ Protokoll")
+        else:
+            self.log_frame.pack(fill="both", expand=False)
+            self.btn_log.config(text="▾ Protokoll")
 
     # -------------------------------------------------------------- Aktionen
     def protokoll(self, text):
