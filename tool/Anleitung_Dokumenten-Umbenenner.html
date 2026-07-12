@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8">
+<title>Dokumenten-Umbenenner - Kurzanleitung</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'Arial', 'Helvetica Neue', sans-serif;
+         color: #2d2926; font-size: 12px; line-height: 1.45; }
+  .head { border-bottom: 3px solid #c8a882; padding-bottom: 10px; margin-bottom: 14px; }
+  .brand { color: #6b5040; font-size: 12px; letter-spacing: 3px; font-weight: 700; }
+  h1 { font-size: 24px; font-weight: 300; margin: 2px 0 2px 0; letter-spacing: .3px; }
+  .sub { color: #6b5040; font-size: 12px; }
+  .intro { background: #faf6ef; border-left: 6px solid #c8a882; padding: 9px 12px;
+           margin: 0 0 14px 0; }
+  h2 { font-size: 13px; color: #fff; background: #2d2926; padding: 5px 10px;
+       margin: 14px 0 8px 0; border-left: 6px solid #c8a882; font-weight: 600; }
+  ol, ul { margin: 4px 0 4px 0; padding-left: 20px; }
+  li { margin: 3px 0; }
+  .cols { display: flex; gap: 16px; }
+  .col { flex: 1; }
+  .box { border: 1px solid #e6ddcf; border-radius: 4px; padding: 8px 10px; }
+  .k { color: #6b5040; font-weight: 700; }
+  .tip { background: #faf6ef; padding: 8px 12px; border-radius: 4px; margin-top: 10px;
+         font-size: 11.5px; }
+  .warn { color: #8a2f2f; font-weight: 700; }
+  footer { margin-top: 16px; border-top: 1px solid #c8a882; padding-top: 8px;
+           color: #6b5040; font-size: 10.5px; }
+  .badge { display:inline-block; background:#6b5040; color:#fff; border-radius:3px;
+           padding:1px 7px; font-size:10.5px; margin-left:6px; }
+</style></head>
+<body>
+  <div class="head">
+    <div class="brand">KPC</div>
+    <h1>Dokumenten-Umbenenner &ndash; Kurzanleitung <span class="badge">kein Zusatzprogramm noetig</span></h1>
+    <div class="sub">Benennt Dokumente, Scans und E-Mails automatisch nach der Verfahrensanweisung
+      &bdquo;Dokumentenbenennung &amp; Versionierung&ldquo; und sortiert sie in die Projektordner.</div>
+  </div>
+
+  <div class="intro">
+    Einfach die Datei <span class="k">Dokumenten-Umbenenner.exe</span> per Doppelklick starten &ndash;
+    kein Login, keine Installation. Es wird <b>nichts ueberschrieben</b>, die Dateiendung bleibt erhalten.
+  </div>
+
+  <h2>1 &nbsp; Starten</h2>
+  <ol>
+    <li><b>Dokumenten-Umbenenner.exe</b> doppelklicken.</li>
+    <li>Falls Windows warnt (&bdquo;Der Computer wurde geschuetzt&ldquo;):
+        <b>&bdquo;Weitere Informationen&ldquo;</b> &rarr; <b>&bdquo;Trotzdem ausfuehren&ldquo;</b>.
+        (Nur beim ersten Mal.)</li>
+  </ol>
+
+  <h2>2 &nbsp; Dokumente laden &ndash; ein Weg genuegt</h2>
+  <ul>
+    <li><b>&bdquo;Dateien waehlen&hellip;&ldquo;</b> anklicken und Dateien auswaehlen, <i>oder</i></li>
+    <li>Dateien / E-Mails einfach <b>ins Fenster ziehen</b>, <i>oder</i></li>
+    <li>oben einen <b>Ordner</b> waehlen &rarr; <b>&bdquo;Einlesen&ldquo;</b>.</li>
+  </ul>
+  <div class="box">E-Mails (<span class="k">.eml</span>/<span class="k">.msg</span>) werden automatisch zerlegt:
+    <b>Mailtext als PDF</b> + <b>echte Anhaenge</b> (Signatur-Bildchen werden weggelassen).</div>
+
+  <h2>3 &nbsp; Pruefen und umbenennen</h2>
+  <ol>
+    <li>In der Tabelle je Datei pruefen: <span class="k">Neu (Vorschau)</span> = neuer Name,
+        <span class="k">Projektordner</span> = wohin sie kommt.</li>
+    <li>Stimmt etwas nicht: Zeile anklicken &rarr; unten die <b>Felder</b> korrigieren &rarr;
+        <b>&bdquo;Vorschau aktualisieren&ldquo;</b>.</li>
+    <li>Unten <b>&bdquo;Alle umbenennen&ldquo;</b> &rarr; bestaetigen. <b>Fertig.</b></li>
+  </ol>
+
+  <div class="cols">
+    <div class="col">
+      <h2>Einsortieren in Projektordner</h2>
+      <ul>
+        <li><b>Projektbasis</b> = der Ordner mit deinen Projektordnern. Beim Einlesen von
+            <span class="k">00_Posteingang</span> stellt sich das automatisch ein &ndash;
+            sonst per &bdquo;Durchsuchen&hellip;&ldquo; waehlen.</li>
+        <li>Haken <b>&bdquo;fehlende Projektordner anlegen&ldquo;</b> legt einen fehlenden
+            Ordner automatisch an.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h2>Offline oder mit KI</h2>
+      <ul>
+        <li><b>Offline</b> (Standard): erkennt <b>Datum</b> und <b>Typ</b> automatisch,
+            den Rest bestaetigst du. Kein Internet noetig.</li>
+        <li><b>Claude- / Gemini-API</b>: erkennt <b>alle Felder automatisch</b> (auch Scans).
+            Dazu Modus waehlen + eigenen <b>API-Schluessel</b> eintragen.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="tip"><span class="warn">Gut zu wissen:</span>
+    Bei gleichem Namen wird <span class="k">-02</span>, <span class="k">-03</span> &hellip; angehaengt,
+    nie ueberschrieben. Nichts wird ins Internet geladen (ausser im API-Modus das jeweilige
+    Dokument zur Erkennung).</div>
+
+  <footer>KPC &middot; Dokumenten-Umbenenner &nbsp;|&nbsp; Fragen? &rarr; ____________________________
+    (Name / Kontakt)</footer>
+</body></html>
