@@ -1,7 +1,7 @@
 # Dokumenten-Umbenenner (Desktop-Programm)
 
 Eigenständiges Programm, das Projektdokumente nach der KPC-Verfahrensanweisung
-*„Dokumentenbenennung & Versionierung"* (VA 1.1) umbenennt – **außerhalb von
+*„Dokumentenbenennung & Versionierung"* (VA 1.3) umbenennt – **außerhalb von
 Claude**, mit einer kleinen Fenster-Oberfläche.
 
 ## Zwei Modi (Umschalter)
@@ -143,4 +143,4 @@ braucht zusätzlich einen Schlüssel im Programm.
 > Die verbindlichen Regeln stehen zusätzlich in
 > [`../.claude/skills/dokumentenumbenennung/SKILL.md`](../.claude/skills/dokumentenumbenennung/SKILL.md)
 > (Quelle des API-Systemprompts) und in
-> [`../docs/VA_Dokumentenbenennung_1.1.pdf`](../docs/VA_Dokumentenbenennung_1.1.pdf).
+> [`../docs/VA_Dokumentenbenennung_1.3.pdf`](../docs/VA_Dokumentenbenennung_1.3.pdf).

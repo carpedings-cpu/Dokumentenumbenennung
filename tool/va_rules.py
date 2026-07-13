@@ -1,5 +1,6 @@
 """
-Regeln der KPC-Verfahrensanweisung "Dokumentenbenennung" (Version 1.1).
+Regeln der KPC-Verfahrensanweisung "Dokumentenbenennung & Versionierung"
+(Version 1.3, Stand Juni 2026).
 
 Maschinen-Referenz fuer das Umbenennungs-Tool. Inhaltlich identisch mit
 .claude/skills/dokumentenumbenennung/SKILL.md - beide muessen synchron bleiben.
@@ -9,52 +10,80 @@ import re
 import unicodedata
 
 # ---------------------------------------------------------------------------
-# Verbindliche Dokumententypen (Referenzliste Kapitel 5)
-# Platzhalter wie [Lieferant] sind entfernt; den variablen Teil traegt der
-# Nutzer in der Bezeichnung nach.
+# Verbindliche Dokumententypen (Referenzliste Kapitel 5, VA 1.3)
+# Platzhalter wie _[Lieferant]/_[Bezeichnung] sind entfernt; den variablen Teil
+# traegt der Nutzer in der Bezeichnung nach. Feste Unterstrich-Teile (z. B.
+# Vertragsbedingungen_BVB, AG_Vorgabe_Montage) bleiben Teil des Typs.
 # ---------------------------------------------------------------------------
 DOKUMENTTYPEN = [
-    # 5.1 Allgemeine Typen
+    # 5.1 Allgemeine Dokumententypen
     "Vermerk", "Gesprächsnotiz", "Protokoll", "Schriftverkehr", "E-Mail",
     "Bericht", "Anweisung", "Entscheidung", "Versandnachweis", "Datenblatt",
-    "Steuerungsdokument",
-    # 5.2 Vertragliche Grundlagen / Vertragsmanagement
-    "Stückliste", "Bauzeitenplan", "Muster", "Vorgabe_Montage",
-    "Vorgabe_Revision", "Vorgabe_Wartung", "Vorgabe_Sicherheit",
-    "Vorgabe_Logistik", "Richtlinie", "Baustellenordnung", "Nachweisdokument",
-    "Prüfbericht", "Formblatt", "Behinderungsanzeige", "Vertrag", "Vorgabe",
-    # 5.4 Inbetriebnahme
-    "IBN_Protokoll", "IBN_Anzeige",
-    # 5.5 Abnahme
-    "Abnahme_Anmeldung", "Abnahme_Terminbestätigung", "Abnahme_Prüfprotokoll",
-    "Abnahmeprotokoll", "Abnahme_Fertigstellungsanzeige", "Abnahme_Mängelliste",
-    "Abnahme_Stückliste", "Abnahme_Freigabe", "Abnahme_Mängelfreimeldung",
-    "Abnahme_Leistungsfeststellung",
-    # 5.6 Betrieb, Service, Wartung
+    "Präsentation",
+    # 5.2 Organisation
+    "Verfahrensanweisung", "Arbeitsanweisung", "Anleitung", "Schulungsunterlagen",
+    # 5.3 Vertragsmanagement – Vertragliche Grundlagen
+    "Ausschreibung_Leistungsverzeichnis", "Ausschreibung_Bieterfragen",
+    "Ausschreibung_Kalkulation", "Ausschreibung_Angebot_signiert",
+    "Ausschreibung_Alternativangebot_signiert", "Vergabeprotokoll",
+    "Vergabe_Auftragsschreiben", "AG_BZP", "AG_Logistikhandbuch",
+    "Vertrag_Auftraggeber", "Vertragsbedingungen_BVB", "Vertragsbedingungen_ZVB",
+    "Vertragsbedingungen_TVB", "Vertragsbedingungen_AVB", "Stückliste",
+    # 5.4 Vertragsmanagement – Technische Unterlagen (vom Auftraggeber)
+    "AG_Planunterlagen", "AG_Technische-Stückliste", "AG_Herstellerunterlagen",
+    "AG_Produktdatenblätter", "AG_Bemusterungsunterlagen",
+    "AG_Vorschriften_Baugenehmigung", "AG_Vorschriften_Brandschutznachweis",
+    "AG_Nachweise_Zertifizierung", "AG_Vorgabe_Montage", "AG_Vorgabe_Revision",
+    "AG_Vorgabe_Wartung", "AG_Vorgabe_Sicherheit", "AG_Vorgabe_Logistik",
+    "Muster",
+    # 5.5 Vertragsmanagement – Projektmanagement
+    "Richtlinie", "Baustellenordnung", "Nachweisdokument", "Prüfbericht",
+    "Formblatt", "Behinderungsanzeige", "Vertrag", "Vorgabe",
+    # 5.6 Wartungsvertrag
+    "Wartungsvertrag",
+    # 5.8 Inbetriebnahme
+    "IBN_Anmeldung", "IBN_Protokoll",
+    # 5.9 Abnahme
+    "Abnahme_Leistungsfeststellung", "Abnahme_Anmeldung",
+    "Abnahme_Terminbestätigung", "Abnahme_Stückliste", "Abnahmeprotokoll",
+    "Abnahme_Prüfprotokoll", "Abnahme_Fertigstellungsanzeige",
+    "Abnahme_Mängelliste", "Abnahme_Mängelfreimeldung",
+    # 5.10 Betrieb, Service, Wartung
     "Revisionsunterlagen", "Betriebsanleitung", "Wartungsvorgabe",
-    "Wartungsvertrag", "Servicevertrag", "Wartungsanforderung",
-    "Abschlussanzeige",
-    # 5.8 Extern erstellte Dokumente
-    "Auftragsbestätigung", "Lieferavis", "Lieferterminänderung", "Freigabe",
-    "Stellungnahme", "Werksplan", "Lieferantenplan",
+    "Wartungsprotokoll", "Servicebericht", "Serviceanforderung", "Mangelanzeige",
+    # 5.11 Einkauf | Werksplan und Ueberwachung der Lieferung
+    "Auftragsbestätigung", "Lieferavis", "Lieferterminänderung", "Werksplan",
 ]
 
-# Typen, bei denen das Datumsfeld laut VA entfaellt.
+# Typen, bei denen das Datumsfeld laut VA entfaellt (Vertrags-/AG-Unterlagen,
+# Betriebsanleitungen/Wartungsvorgaben, extern erstellte Einkaufsdokumente).
 TYPEN_OHNE_DATUM = {
-    "Betriebsanleitung", "Wartungsvorgabe", "Vertrag", "Wartungsvertrag",
-    "Servicevertrag", "Stückliste", "Bauzeitenplan", "Muster",
-    "Vorgabe_Montage", "Vorgabe_Revision", "Vorgabe_Wartung",
-    "Vorgabe_Sicherheit", "Vorgabe_Logistik", "Vorgabe", "Richtlinie",
-    "Baustellenordnung", "Nachweisdokument", "Prüfbericht", "Formblatt",
-    "Behinderungsanzeige", "Auftragsbestätigung", "Lieferavis",
-    "Lieferterminänderung", "Freigabe", "Stellungnahme", "Werksplan",
-    "Lieferantenplan",
+    # Vertragliche Grundlagen (5.3)
+    "Ausschreibung_Leistungsverzeichnis", "Ausschreibung_Bieterfragen",
+    "Ausschreibung_Kalkulation", "Ausschreibung_Angebot_signiert",
+    "Ausschreibung_Alternativangebot_signiert", "Vergabeprotokoll",
+    "Vergabe_Auftragsschreiben", "AG_BZP", "AG_Logistikhandbuch",
+    "Vertrag_Auftraggeber", "Vertragsbedingungen_BVB", "Vertragsbedingungen_ZVB",
+    "Vertragsbedingungen_TVB", "Vertragsbedingungen_AVB", "Stückliste",
+    # Technische Unterlagen vom AG (5.4)
+    "AG_Planunterlagen", "AG_Technische-Stückliste", "AG_Herstellerunterlagen",
+    "AG_Produktdatenblätter", "AG_Bemusterungsunterlagen",
+    "AG_Vorschriften_Baugenehmigung", "AG_Vorschriften_Brandschutznachweis",
+    "AG_Nachweise_Zertifizierung", "AG_Vorgabe_Montage", "AG_Vorgabe_Revision",
+    "AG_Vorgabe_Wartung", "AG_Vorgabe_Sicherheit", "AG_Vorgabe_Logistik",
+    "Muster",
+    # Projektmanagement / Verträge (5.5, 5.6)
+    "Richtlinie", "Baustellenordnung", "Nachweisdokument", "Prüfbericht",
+    "Formblatt", "Behinderungsanzeige", "Vertrag", "Vorgabe", "Wartungsvertrag",
+    # Betrieb (5.10) – Gerät/Anlage als Bezeichnung
+    "Betriebsanleitung", "Wartungsvorgabe",
+    # Einkauf (5.11) – Quelle statt Datum
+    "Auftragsbestätigung", "Lieferavis", "Lieferterminänderung", "Werksplan",
 }
 
-# Extern erstellte Typen -> Quelle gehoert in den Namen.
+# Extern erstellte Typen (Kap. 5.11) -> Quelle gehoert in den Namen.
 TYPEN_MIT_QUELLE = {
-    "Auftragsbestätigung", "Lieferavis", "Lieferterminänderung", "Freigabe",
-    "Stellungnahme", "Werksplan", "Lieferantenplan",
+    "Auftragsbestätigung", "Lieferavis", "Lieferterminänderung", "Werksplan",
 }
 
 # ---------------------------------------------------------------------------
@@ -155,6 +184,16 @@ _SYNONYME = {
     "email": "E-Mail", "e mail": "E-Mail", "mail": "E-Mail",
     "aktennotiz": "Vermerk", "notiz": "Vermerk",
     "lieferschein": "Lieferavis", "auftragsbestaetigung": "Auftragsbestätigung",
+    # VA 1.3: neue/umbenannte Typen
+    "praesentation": "Präsentation", "powerpoint": "Präsentation",
+    "ppt": "Präsentation", "folien": "Präsentation",
+    "wartungsanforderung": "Serviceanforderung",   # 1.1 -> 1.3 umbenannt
+    "maengelanzeige": "Mangelanzeige", "mangelmeldung": "Mangelanzeige",
+    "wartungsbericht": "Wartungsprotokoll",
+    "leistungsverzeichnis": "Ausschreibung_Leistungsverzeichnis",
+    "kalkulation": "Ausschreibung_Kalkulation",
+    "vergabe": "Vergabeprotokoll",
+    "arbeitsanweisung": "Arbeitsanweisung", "va": "Verfahrensanweisung",
 }
 
 

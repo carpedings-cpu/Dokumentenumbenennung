@@ -2,14 +2,14 @@
 name: dokumentenumbenennung
 description: >-
   Benennt Projektdokumente nach der KPC-Verfahrensanweisung "Dokumentenbenennung
-  & Versionierung" (VA, Version 1.1) um. Nutze diese Skill, wenn der Nutzer
+  & Versionierung" (VA, Version 1.3) um. Nutze diese Skill, wenn der Nutzer
   Dateien/Scans/PDFs umbenennen, ein Dokument korrekt benennen, einen Dateinamen
   nach Schema bilden oder einen Ordner nach der VA bereinigen möchte. Erkennt
   Datum, Quelle, Phase, Dokumententyp, Bezeichnung und Version, schlägt den neuen
   Namen als Vorschau (Dry-Run) vor und benennt nach Bestätigung um.
 ---
 
-# Dokumentenbenennung (KPC VA 1.1)
+# Dokumentenbenennung (KPC VA 1.3)
 
 Ziel: Jeder Dateiname lässt **ohne Öffnen der Datei** erkennen, *wann* das
 Dokument entstand, *von wem* es stammt (bei externen Dokumenten), *welcher
@@ -82,46 +82,68 @@ Die Versionsangabe steht am **Ende** des Dateinamens.
 
 ---
 
-# Dokumententypen – Referenzliste (verbindlich)
+# Dokumententypen – Referenzliste (verbindlich, VA 1.3)
 
-Nur diese Typbezeichnungen dürfen im Dateinamen verwendet werden.
+Nur diese Typbezeichnungen dürfen im Dateinamen verwendet werden. `[...]` ist ein
+variabler Teil (kommt in die Bezeichnung); feste Unterstrich-Teile (z. B.
+`Vertragsbedingungen_BVB`) gehören zum Typ.
 
-### 5.1 Allgemeine Typen (projektphasenübergreifend)
-`Vermerk`, `Gesprächsnotiz`, `Protokoll`, `Schriftverkehr`, `E-Mail`,
-`Bericht`, `Anweisung`, `Entscheidung`, `Versandnachweis`, `Datenblatt`,
-`Steuerungsdokument`
+### 5.1 Allgemeine Dokumententypen
+`Vermerk` (früher Aktennotiz), `Gesprächsnotiz`, `Protokoll`, `Schriftverkehr`,
+`E-Mail`, `Bericht`, `Anweisung`, `Entscheidung`, `Versandnachweis`,
+`Datenblatt`, `Präsentation_[Thema]`
 
-### 5.2 Vertragliche Grundlagen / Vertragsmanagement
-`Stückliste`, `Bauzeitenplan`, `Muster_[Bezeichnung]`, `Vorgabe_Montage`,
-`Vorgabe_Revision`, `Vorgabe_Wartung`, `Vorgabe_Sicherheit`, `Vorgabe_Logistik`,
+### 5.2 Organisation
+`Verfahrensanweisung_[Bezeichnung]`, `Arbeitsanweisung_[Bezeichnung]`,
+`Anleitung_[Thema]`, `Schulungsunterlagen_[Inhalt]`
+
+### 5.3 Vertragsmanagement – Vertragliche Grundlagen *(kein Datum)*
+`Ausschreibung_Leistungsverzeichnis`, `Ausschreibung_Bieterfragen`,
+`Ausschreibung_Kalkulation`, `Ausschreibung_Angebot_signiert`,
+`Ausschreibung_Alternativangebot_signiert`, `Vergabeprotokoll`,
+`Vergabe_Auftragsschreiben`, `AG_BZP`, `AG_Logistikhandbuch`,
+`Vertrag_Auftraggeber`, `Vertragsbedingungen_BVB`, `Vertragsbedingungen_ZVB`,
+`Vertragsbedingungen_TVB`, `Vertragsbedingungen_AVB`, `Stückliste`
+
+### 5.4 Vertragsmanagement – Technische Unterlagen (vom Auftraggeber, `AG_…`) *(kein Datum)*
+`AG_Planunterlagen_[Bezeichnung]`, `AG_Technische-Stückliste`,
+`AG_Herstellerunterlagen_[Hersteller]`, `AG_Produktdatenblätter_[Bezeichnung]`,
+`AG_Bemusterungsunterlagen_[Bezeichnung]`, `AG_Vorschriften_Baugenehmigung`,
+`AG_Vorschriften_Brandschutznachweis`, `AG_Nachweise_Zertifizierung`,
+`AG_Vorgabe_Montage`, `AG_Vorgabe_Revision`, `AG_Vorgabe_Wartung`,
+`AG_Vorgabe_Sicherheit`, `AG_Vorgabe_Logistik`, `Muster_[Bezeichnung]`
+
+### 5.5 Vertragsmanagement – Projektmanagement
 `Richtlinie`, `Baustellenordnung`, `Nachweisdokument`, `Prüfbericht`,
-`Formblatt`, `Behinderungsanzeige`, `Vertrag_[Partnername]`,
+`Formblatt`, `Behinderungsanzeige`, `Vertrag_[Partnername]` (kein Datum),
 `Vorgabe_[Bezeichnung]`
-*(Vertragsunterlagen: kein Datum.)*
 
-### 5.3 Planunterlagen
+### 5.6 Wartungsvertrag
+`Wartungsvertrag` *(kein Datum)*
+
+### 5.7 Planunterlagen
 Eigenständiges Schema → siehe „Planbenennungsschema".
 
-### 5.4 Inbetriebnahme (IBN)
-`IBN_Protokoll_[Lieferant]_[Gewerk]`, `IBN_Anzeige`
+### 5.8 Inbetriebnahme
+`IBN_Anmeldung`, `IBN_Protokoll_[Hersteller]_[Gerätebezeichnung]`
 
-### 5.5 Abnahme
-`Abnahme_Anmeldung`, `Abnahme_Terminbestätigung`,
-`Abnahme_Prüfprotokoll_[Gewerk]`, `Abnahmeprotokoll`,
-`Abnahmeprotokoll_[Bereich]`, `Abnahme_Fertigstellungsanzeige`,
-`Abnahme_Mängelliste`, `Abnahme_Stückliste`, `Abnahme_Freigabe`,
-`Abnahme_Mängelfreimeldung`, `Abnahme_Leistungsfeststellung`
+### 5.9 Abnahme
+`Abnahme_Leistungsfeststellung`, `Abnahme_Anmeldung`,
+`Abnahme_Terminbestätigung`, `Abnahme_Stückliste`, `Abnahmeprotokoll`,
+`Abnahmeprotokoll_[Bereich]`, `Abnahme_Prüfprotokoll_[Bezeichnung]`,
+`Abnahme_Fertigstellungsanzeige`, `Abnahme_Mängelliste`,
+`Abnahme_Mängelfreimeldung`
 
-### 5.6 Betrieb, Service, Wartung
+### 5.10 Betrieb, Service, Wartung
 `Revisionsunterlagen`, `Betriebsanleitung_[Gerät]` (kein Datum),
-`Wartungsvorgabe_[Anlage]` (kein Datum), `Wartungsvertrag`,
-`Wartungsvertrag_[Partnername]`, `Servicevertrag_[Partnername]`,
-`Wartungsanforderung`, `Abschlussanzeige`
+`Wartungsvorgabe_[Gerät]` (kein Datum), `Wartungsvertrag`,
+`Wartungsvertrag_[Partnername]`, `Wartungsprotokoll_[Gerät]`,
+`Servicebericht_[Kom.]`, `Serviceanforderung_[Gerät]`,
+`Mangelanzeige_[Beschreibung]`
 
-### 5.8 Extern erstellte Dokumente (Quelle im Namen, KEIN Datum)
+### 5.11 Einkauf | Werksplan und Überwachung der Lieferung (Quelle im Namen, KEIN Datum)
 `Auftragsbestätigung_[Lieferant]`, `Lieferavis`, `Lieferterminänderung`,
-`Freigabe`, `Stellungnahme`, `Bauzeitenplan`, `Werksplan_[Lieferant]`,
-`Lieferantenplan_[Lieferant]`
+`Werksplan_[Lieferant]`
 
 ---
 
