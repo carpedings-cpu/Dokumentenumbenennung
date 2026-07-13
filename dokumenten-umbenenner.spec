@@ -17,7 +17,10 @@ if os.path.exists(_mapping):
     datas.append((_mapping, "."))
 binaries = []
 hiddenimports = ["va_rules", "pdf_text", "api_client", "gemini_client",
-                 "email_extract", "projekt_zuordnung"]
+                 "email_extract", "projekt_zuordnung",
+                 # Outlook-Anbindung ("Aus Outlook holen"), pywin32:
+                 "win32com", "win32com.client", "pythoncom", "pywintypes",
+                 "win32timezone"]
 
 # Anthropic-SDK mitbuendeln, falls installiert (fuer den optionalen API-Modus).
 # Fehlt es, bleibt der Offline-Modus voll funktionsfaehig.

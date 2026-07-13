@@ -12,6 +12,8 @@ um. Zwei Modi (Umschalter):
 Start:  python dokumenten_umbenenner.py
 """
 
+import datetime as _dt
+import json
 import os
 import re
 import shutil
@@ -60,6 +62,24 @@ def _standard_basis():
 
 STANDARD_BASIS = _standard_basis()
 EINGANG_ORDNER = "00_Posteingang"
+
+
+def _einstellungen_pfad():
+    """Einstellungen liegen neben der .exe (bzw. neben dem Skript)."""
+    basis = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else _HIER)
+    return os.path.join(basis, "umbenenner_einstellungen.json")
+
+
+def _msg_dateiname(item):
+    """Dateiname fuer eine aus Outlook uebernommene Mail: JJMMTT_Betreff."""
+    try:
+        rt = item.ReceivedTime
+        datum = f"{rt.year % 100:02d}{rt.month:02d}{rt.day:02d}"
+    except Exception:  # noqa: BLE001
+        datum = _dt.datetime.now().strftime("%y%m%d")
+    betreff = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", (getattr(item, "Subject", "") or "Mail"))
+    betreff = re.sub(r"\s+", "-", betreff.strip())[:60].strip("-_") or "Mail"
+    return f"{datum}_{betreff}"
 
 
 def _betreff_kurz(betreff):
@@ -114,6 +134,7 @@ class App:
         self._pz_base = None    # Cache: zuletzt geladene Projektbasis
         self._pz_cache = None   # Cache: Projektliste
 
+        self._lade_einstellungen()   # gespeicherter Modus/Schluessel/Basis
         self._stil()
         self._baue_header()
         self._baue_oben()
@@ -122,6 +143,43 @@ class App:
         self._baue_unten()
         self._aktiviere_dnd()
         self._modus_geaendert()
+        root.protocol("WM_DELETE_WINDOW", self._beim_schliessen)
+
+    # ------------------------------------------------- Einstellungen merken
+    def _lade_einstellungen(self):
+        """Laedt Modus, Schluessel und Projektbasis vom letzten Mal."""
+        try:
+            with open(_einstellungen_pfad(), encoding="utf-8") as f:
+                e = json.load(f)
+            if e.get("modus") in ("offline", "claude", "gemini"):
+                self.modus.set(e["modus"])
+            if e.get("api_key"):
+                self.api_key.set(e["api_key"])
+            if e.get("projektbasis"):
+                self.projektbasis.set(e["projektbasis"])
+            if "einsortieren" in e:
+                self.einsortieren.set(bool(e["einsortieren"]))
+            if "ordner_anlegen" in e:
+                self.ordner_anlegen.set(bool(e["ordner_anlegen"]))
+        except Exception:  # noqa: BLE001  (keine/kaputte Datei -> Standardwerte)
+            pass
+
+    def _speichere_einstellungen(self):
+        try:
+            with open(_einstellungen_pfad(), "w", encoding="utf-8") as f:
+                json.dump({
+                    "modus": self.modus.get(),
+                    "api_key": self.api_key.get().strip(),
+                    "projektbasis": self.projektbasis.get().strip(),
+                    "einsortieren": bool(self.einsortieren.get()),
+                    "ordner_anlegen": bool(self.ordner_anlegen.get()),
+                }, f, ensure_ascii=False, indent=2)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _beim_schliessen(self):
+        self._speichere_einstellungen()
+        self.root.destroy()
 
     def _aktiviere_dnd(self):
         """Registriert das Fenster fuer Drag & Drop; meldet Erfolg/Misserfolg."""
@@ -196,8 +254,10 @@ class App:
         r.pack(fill="x", pady=(6, 0))
         ttk.Button(r, text="Dateien wählen…", style="Accent.TButton",
                    command=self.waehle_dateien).pack(side="left")
-        ttk.Button(r, text="Ordner…", command=self._ordner_und_einlesen).pack(side="left", padx=6)
-        ttk.Button(r, text="Liste leeren", command=self._leeren).pack(side="left")
+        ttk.Button(r, text="Aus Outlook holen", style="Accent.TButton",
+                   command=self.hole_aus_outlook).pack(side="left", padx=6)
+        ttk.Button(r, text="Ordner…", command=self._ordner_und_einlesen).pack(side="left")
+        ttk.Button(r, text="Liste leeren", command=self._leeren).pack(side="left", padx=6)
         hinweis = ("…oder Dateien / E-Mails einfach ins Fenster ziehen."
                    if _HAS_DND else "Tipp: mit dem Knopf Ordner liest du einen ganzen Ordner ein.")
         ttk.Label(r, text=hinweis, style="Hint.TLabel").pack(side="left", padx=12)
@@ -416,6 +476,70 @@ class App:
         rec = PZ.finde_projekt(projekte, such)
         return rec["ordner"] if rec else ""
 
+    def hole_aus_outlook(self):
+        """Holt die in Outlook MARKIERTEN E-Mails direkt ins Programm.
+
+        Outlook wird nur GELESEN (SaveAs-Kopie als .msg); im Postfach wird
+        nichts verschoben, geloescht oder als gelesen markiert.
+        """
+        try:
+            import win32com.client
+        except ImportError:
+            messagebox.showinfo(
+                "Outlook-Anbindung fehlt",
+                "Diese Programmversion hat keine Outlook-Anbindung.\n"
+                "Bitte die aktuelle Version laden - oder die Mail als .msg "
+                "speichern und ueber 'Dateien waehlen...' laden.")
+            return
+        try:
+            ol = win32com.client.Dispatch("Outlook.Application")
+            auswahl = ol.ActiveExplorer().Selection
+            anzahl = int(auswahl.Count)
+        except Exception:  # noqa: BLE001
+            messagebox.showerror(
+                "Outlook nicht erreichbar",
+                "Bitte das klassische Desktop-Outlook oeffnen, die gewuenschten "
+                "E-Mails anklicken und dann erneut auf 'Aus Outlook holen' "
+                "klicken.\n\nHinweis: Das 'neue Outlook' (Store-App) kann das "
+                "leider nicht.")
+            return
+        if anzahl < 1:
+            messagebox.showinfo(
+                "Keine E-Mail markiert",
+                "Bitte zuerst in Outlook die E-Mail(s) anklicken (markieren) - "
+                "dann hier erneut auf 'Aus Outlook holen'.")
+            return
+
+        basis = self.projektbasis.get().strip()
+        wurzel = basis if os.path.isdir(basis) else os.path.expanduser("~")
+        ziel_dir = os.path.join(wurzel, EINGANG_ORDNER)
+        os.makedirs(ziel_dir, exist_ok=True)
+
+        gespeichert = []
+        for i in range(1, min(anzahl, 50) + 1):
+            try:
+                item = auswahl.Item(i)
+                if int(getattr(item, "Class", 0)) != 43:   # 43 = olMail
+                    continue
+                stamm = _msg_dateiname(item)
+                pfad = os.path.join(ziel_dir, stamm + ".msg")
+                n = 2
+                while os.path.exists(pfad):
+                    pfad = os.path.join(ziel_dir, f"{stamm}-{n:02d}.msg")
+                    n += 1
+                item.SaveAs(pfad, 9)   # 9 = olMSGUnicode (nur Kopie, read-only)
+                gespeichert.append(pfad)
+            except Exception as e:  # noqa: BLE001
+                self.protokoll(f"  Outlook-Mail übersprungen: {e}")
+        if not gespeichert:
+            messagebox.showinfo(
+                "Nichts übernommen",
+                "Es waren keine E-Mails markiert (Termine/Kontakte werden "
+                "nicht übernommen).")
+            return
+        self.protokoll(f"{len(gespeichert)} E-Mail(s) aus Outlook übernommen → {ziel_dir}")
+        self._add_files(gespeichert, anhaengen=True)
+
     def waehle_dateien(self):
         """Sicherer Weg ohne Drag & Drop: Dateien/E-Mails per Dialog auswählen."""
         pfade = filedialog.askopenfilenames(
@@ -609,7 +733,7 @@ class App:
         felder["_orig"] = name
         felder["_dir"] = os.path.dirname(os.path.abspath(pfad))
         neu = self._stamm(felder)
-        neu_anzeige = (neu + ext) if neu else "(unvollständig)"
+        neu_anzeige = (neu + ext) if neu else "(Typ fehlt – Zeile anklicken, unten wählen)"
         item = self.tree.insert("", "end",
                                 values=(name, felder.get("dokumententyp", ""),
                                         felder.get("datum", ""),
@@ -636,7 +760,7 @@ class App:
         felder["ist_plan"] = bool(self.ist_plan.get())
         neu = self._stamm(felder)
         ext = felder["_ext"]
-        anzeige = (neu + ext) if neu else "(unvollständig)"
+        anzeige = (neu + ext) if neu else "(Typ fehlt – Zeile anklicken, unten wählen)"
         self.tree.item(item, values=(felder["_orig"],
                                      felder.get("dokumententyp", ""),
                                      felder.get("datum", ""),
@@ -726,6 +850,7 @@ class App:
             except OSError as e:
                 self.protokoll(f"FEHLER bei {alt}: {e}")
         self.status.set(f"{ok}/{len(plan)} Datei(en) verarbeitet.")
+        self._speichere_einstellungen()
         messagebox.showinfo("Fertig", f"{ok} von {len(plan)} Datei(en) umbenannt"
                             + (f", {anzahl_verschoben} in Projektordner einsortiert." if anzahl_verschoben else "."))
 
