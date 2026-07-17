@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Versions-Tag für das Release (z. B. v3.3)"
+        description: "Versions-Tag für das Release (z. B. v3.4)"
         required: false
-        default: "v3.3"
+        default: "v3.4"
   push:
     tags:
       - "v*"
@@ -40,6 +40,9 @@ jobs:
       - name: Morgenbriefing-EXE bauen
         run: pyinstaller --noconfirm briefing.spec
 
+      - name: Mail-Frage-EXE bauen
+        run: pyinstaller --noconfirm mail-frage.spec
+
       - name: EXE als Artefakt hochladen
         uses: actions/upload-artifact@v4
         with:
@@ -47,6 +50,7 @@ jobs:
           path: |
             dist/Dokumenten-Umbenenner.exe
             dist/KPC-Morgenbriefing.exe
+            dist/KPC-Mail-Frage.exe
           if-no-files-found: error
 
       - name: Release anlegen (Versions-Tag oder manueller Start)
@@ -58,3 +62,4 @@ jobs:
           files: |
             dist/Dokumenten-Umbenenner.exe
             dist/KPC-Morgenbriefing.exe
+            dist/KPC-Mail-Frage.exe
