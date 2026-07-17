@@ -209,8 +209,11 @@ def oeffne_mail_in_outlook(entry_id, store_id=""):
     try:
         import win32com.client
         ns = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
-        item = (ns.GetItemFromID(entry_id, store_id) if store_id
-                else ns.GetItemFromID(entry_id))
+        try:
+            item = (ns.GetItemFromID(entry_id, store_id) if store_id
+                    else ns.GetItemFromID(entry_id))
+        except Exception:  # noqa: BLE001  (StoreID passt nicht mehr -> ohne)
+            item = ns.GetItemFromID(entry_id)
         item.Display()
         return True
     except Exception as e:  # noqa: BLE001
@@ -879,7 +882,7 @@ def abhaken_fenster(offene):
         return set()
     try:
         import tkinter as tk
-        from tkinter import ttk
+        from tkinter import messagebox, ttk
     except Exception:  # noqa: BLE001
         return set()
     root = tk.Tk()
@@ -928,7 +931,20 @@ def abhaken_fenster(offene):
         if not iid:
             return
         t = row_of[iid]
-        oeffne_mail_in_outlook(t.get("entry_id", ""), t.get("store_id", ""))
+        if not t.get("entry_id"):
+            messagebox.showinfo(
+                "Keine Mail verknüpft",
+                "Für diese Aufgabe ist keine E-Mail gespeichert.\n\n"
+                "Das ist bei ÄLTEREN Einträgen normal - die Verknüpfung gibt "
+                "es erst für Aufgaben, die ab Version 3.1 neu eingelesen "
+                "wurden (erkennbar an einer gefüllten Spalte 'Von / An').")
+            return
+        if not oeffne_mail_in_outlook(t.get("entry_id", ""), t.get("store_id", "")):
+            messagebox.showerror(
+                "Mail nicht gefunden",
+                "Die verknüpfte E-Mail konnte nicht geöffnet werden.\n\n"
+                "Mögliche Gründe: Outlook ist nicht geöffnet, oder die Mail "
+                "wurde inzwischen verschoben/gelöscht/archiviert.")
     tree.bind("<Double-Button-1>", doppelklick)
 
     erg = {"ids": set()}
