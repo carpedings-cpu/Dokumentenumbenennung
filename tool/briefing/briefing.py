@@ -158,8 +158,12 @@ def schluessel(projekt, titel):
     return _norm(projekt) + "|" + _norm(titel)[:70]
 
 
-def merge_todos(store, punkte, heute):
-    """Fuegt neue Aufgaben hinzu; bereits bekannte (offen ODER erledigt) nicht erneut."""
+def merge_todos(store, punkte, heute, mails=None):
+    """Fuegt neue Aufgaben hinzu; bereits bekannte (offen ODER erledigt) nicht erneut.
+
+    Ueber die Mail-Nummer (Feld 'mail') wird die echte Absender-/Empfaenger-
+    Adresse aus der jeweiligen E-Mail uebernommen (Feld 'kontakt').
+    """
     bekannt = {t["id"] for t in store["todos"]}
     neu = 0
     for p in punkte:
@@ -170,6 +174,15 @@ def merge_todos(store, punkte, heute):
         if sid in bekannt:
             continue
         bekannt.add(sid)
+        kontakt = entry_id = store_id = ""
+        try:
+            idx = int(p.get("mail", 0))
+            if mails and 1 <= idx <= len(mails):
+                kontakt = mails[idx - 1].get("partner", "")
+                entry_id = mails[idx - 1].get("entry_id", "")
+                store_id = mails[idx - 1].get("store_id", "")
+        except Exception:  # noqa: BLE001
+            pass
         store["todos"].append({
             "id": sid,
             "projekt": p.get("projekt", "Allgemein"),
@@ -178,12 +191,31 @@ def merge_todos(store, punkte, heute):
             "dringlichkeit": p.get("dringlichkeit", "Niedrig"),
             "fuer_mich": bool(p.get("fuer_mich", True)),
             "richtung": p.get("richtung", ""),
+            "kontakt": kontakt,
+            "entry_id": entry_id,
+            "store_id": store_id,
             "status": "offen",
             "erstellt": heute,
             "erledigt_am": None,
         })
         neu += 1
     return neu
+
+
+def oeffne_mail_in_outlook(entry_id, store_id=""):
+    """Oeffnet die Original-Mail in Outlook (nur anzeigen, nichts aendern)."""
+    if not entry_id:
+        return False
+    try:
+        import win32com.client
+        ns = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+        item = (ns.GetItemFromID(entry_id, store_id) if store_id
+                else ns.GetItemFromID(entry_id))
+        item.Display()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"  Mail konnte nicht geoeffnet werden: {e}")
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -382,9 +414,18 @@ def sammle_mails(cfg, marker, max_n):
                     topic = item.ConversationTopic or ""
                 except Exception:  # noqa: BLE001
                     topic = ""
+                try:
+                    entry_id = item.EntryID or ""
+                except Exception:  # noqa: BLE001
+                    entry_id = ""
+                try:
+                    store_id = item.Parent.StoreID or ""
+                except Exception:  # noqa: BLE001
+                    store_id = ""
                 mails.append({"richtung": richtung, "rolle": rolle, "zeit": zeit,
                               "partner": partner, "betreff": betreff, "auszug": auszug,
-                              "conv_id": conv_id, "topic": topic})
+                              "conv_id": conv_id, "topic": topic,
+                              "entry_id": entry_id, "store_id": store_id})
                 gezaehlt += 1
             except Exception as e:  # noqa: BLE001
                 print(f"  Uebersprungen (Lesefehler): {e}")
@@ -509,6 +550,8 @@ def registriere_nachfass(state, mails, nachfass_items):
                 "projekt": nf.get("projekt", "") or (cur or {}).get("projekt", "Allgemein"),
                 "gesendet_iso": ges,
                 "topic": _norm(m.get("topic", ""))[:60],
+                "entry_id": m.get("entry_id", ""),
+                "store_id": m.get("store_id", ""),
             }
 
 
@@ -544,6 +587,8 @@ def pruefe_nachfass(state, store, antwort_idx, jetzt, heute):
                            f"(gesendet vor {tage} Tagen).",
                 "dringlichkeit": "Hoch" if tage >= 7 else "Mittel",
                 "fuer_mich": True, "richtung": "Gesendet", "typ": "nachfass",
+                "kontakt": e.get("empfaenger", ""),
+                "entry_id": e.get("entry_id", ""), "store_id": e.get("store_id", ""),
                 "status": "offen", "erstellt": heute, "erledigt_am": None,
             })
 
@@ -597,6 +642,7 @@ def baue_briefing(mails, projektnamen, cfg, api_key):
         "false wenn ich nur in Kopie bin ([NUR KOPIE]).\n"
         "- dringlichkeit: 'Hoch' (Maengel, Behinderung, Fristen, Eskalation, Termin "
         "heute/morgen), 'Mittel' (Rechnung, Lieferavis, Antwort noetig), 'Niedrig' (Info).\n"
+        "- mail: die Nummer [i] der E-Mail, aus der der Punkt stammt (Pflicht).\n"
         "- termine NUR bei konkretem Datum/Frist. datum als YYYY-MM-DD; uhrzeit 'HH:MM' "
         "oder leer (ganztaegig); dauer_min Standard 60; projekt dazuschreiben.\n"
         "- verschoben: true, wenn die Mail einen BESTEHENDEN Termin aendert/verlegt; "
@@ -606,7 +652,7 @@ def baue_briefing(mails, projektnamen, cfg, api_key):
         "den Empfaenger). Reine Infos/Bestaetigungen NICHT aufnehmen.\n"
         "- Fasse zusammen, erfinde nichts. Antworte AUSSCHLIESSLICH als JSON nach diesem Schema:\n"
         '{"ueberblick": "2-4 Saetze", '
-        '"punkte": [{"projekt": "", "dringlichkeit": "Hoch|Mittel|Niedrig", '
+        '"punkte": [{"mail": 1, "projekt": "", "dringlichkeit": "Hoch|Mittel|Niedrig", '
         '"richtung": "Eingang|Gesendet", "fuer_mich": true, "thema": "", '
         '"naechster_schritt": ""}], '
         '"termine": [{"projekt": "", "titel": "", "datum": "YYYY-MM-DD", "uhrzeit": "", '
@@ -668,6 +714,14 @@ def baue_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl_mails
     def esc(x):
         return html.escape(str(x or ""))
 
+    def thema_zelle(t, text=None):
+        """Thema als Klick-Link zur Original-Mail (outlook:-Protokoll), falls bekannt."""
+        txt = esc(text if text is not None else t.get("thema", ""))
+        eid = t.get("entry_id", "")
+        if eid:
+            return f'<a class="maillink" href="outlook:{esc(eid)}">{txt}</a>'
+        return txt
+
     nachfass = [t for t in offene if t.get("typ") == "nachfass"]
     meine = [t for t in offene if t.get("fuer_mich", True) and t.get("typ") != "nachfass"]
     info = [t for t in offene if not t.get("fuer_mich", True) and t.get("typ") != "nachfass"]
@@ -700,6 +754,8 @@ def baue_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl_mails
   tr:nth-child(even) td { background:#faf6ef; }
   .proj { color:#6b5040; font-weight:700; }
   .chg { color:#8a2f2f; font-weight:700; }
+  .kontakt { color:#6b5040; font-size:11px; }
+  a.maillink { color:#2d2926; text-decoration:underline; text-decoration-color:#c8a882; }
   footer { margin-top:22px; color:#6b5040; font-size:11px;
            border-top:1px solid #c8a882; padding-top:8px; }
 </style></head><body>
@@ -726,11 +782,13 @@ def baue_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl_mails
 
     if nachfass:
         teile.append(f'<h2 class="chghdr">Nachfassen - Antwort ausstehend (seit 3+ Tagen) ({len(nachfass)})</h2>')
-        teile.append("<table><tr><th>Projekt</th><th>Betreff</th><th>Status</th></tr>")
+        teile.append("<table><tr><th>Projekt</th><th>An</th><th>Betreff</th><th>Status</th></tr>")
         for t in nachfass:
+            betreff = t.get("thema", "").replace("Nachfassen: ", "")
             teile.append("<tr>"
                          f'<td><span class="proj">{esc(t.get("projekt", "Allgemein"))}</span></td>'
-                         f"<td>{esc(t.get('thema', '').replace('Nachfassen: ', ''))}</td>"
+                         f'<td><span class="kontakt">{esc(t.get("kontakt", ""))}</span></td>'
+                         f"<td>{thema_zelle(t, betreff)}</td>"
                          f"<td>{esc(t.get('schritt', ''))}</td></tr>")
         teile.append("</table>")
 
@@ -743,22 +801,24 @@ def baue_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl_mails
         if not rows:
             continue
         teile.append(f'<h2 class="{klasse[g]}">{esc(titel[g])} ({len(rows)})</h2>')
-        teile.append("<table><tr><th>Projekt</th><th>Thema</th>"
+        teile.append("<table><tr><th>Projekt</th><th>Von / An</th><th>Thema</th>"
                      "<th>Naechster Schritt</th></tr>")
         for t in rows:
             teile.append("<tr>"
                          f'<td><span class="proj">{esc(t.get("projekt", "Allgemein"))}</span></td>'
-                         f"<td>{esc(t.get('thema', ''))}</td>"
+                         f'<td><span class="kontakt">{esc(t.get("kontakt", ""))}</span></td>'
+                         f"<td>{thema_zelle(t)}</td>"
                          f"<td>{esc(t.get('schritt', ''))}</td></tr>")
         teile.append("</table>")
 
     if info:
         teile.append(f'<h2 class="info">Nur zur Info - jemand anderes zustaendig ({len(info)})</h2>')
-        teile.append("<table><tr><th>Projekt</th><th>Thema</th><th>Hinweis</th></tr>")
+        teile.append("<table><tr><th>Projekt</th><th>Von / An</th><th>Thema</th><th>Hinweis</th></tr>")
         for t in info:
             teile.append("<tr>"
                          f'<td><span class="proj">{esc(t.get("projekt", "Allgemein"))}</span></td>'
-                         f"<td>{esc(t.get('thema', ''))}</td>"
+                         f'<td><span class="kontakt">{esc(t.get("kontakt", ""))}</span></td>'
+                         f"<td>{thema_zelle(t)}</td>"
                          f"<td>{esc(t.get('schritt', ''))}</td></tr>")
         teile.append("</table>")
 
@@ -824,16 +884,16 @@ def abhaken_fenster(offene):
         return set()
     root = tk.Tk()
     root.title("Aufgaben abhaken - erledigte verschwinden dauerhaft")
-    root.geometry("1000x520")
+    root.geometry("1180x520")
     ttk.Label(root, padding=8, text=("Zeile anklicken = als ERLEDIGT markieren. "
-              "Erledigte werden gemerkt und nicht mehr gezeigt.")).pack(anchor="w")
+              "Doppelklick = Original-Mail in Outlook öffnen.")).pack(anchor="w")
     rahmen = ttk.Frame(root, padding=(8, 0))
     rahmen.pack(fill="both", expand=True)
-    cols = ("sel", "dringl", "fuer", "projekt", "thema")
+    cols = ("sel", "dringl", "fuer", "projekt", "kontakt", "thema")
     tree = ttk.Treeview(rahmen, columns=cols, show="headings", height=18)
     for c, t, w in (("sel", "erledigt", 70), ("dringl", "Dringl.", 70),
-                    ("fuer", "Fuer", 90), ("projekt", "Projekt", 220),
-                    ("thema", "Thema", 520)):
+                    ("fuer", "Fuer", 70), ("projekt", "Projekt", 200),
+                    ("kontakt", "Von / An", 220), ("thema", "Thema", 500)):
         tree.heading(c, text=t)
         tree.column(c, width=w, anchor="w")
     sb = ttk.Scrollbar(rahmen, orient="vertical", command=tree.yview)
@@ -847,7 +907,7 @@ def abhaken_fenster(offene):
         iid = tree.insert("", "end", values=(
             "☐", t.get("dringlichkeit", ""),
             "Mir" if t.get("fuer_mich", True) else "Info",
-            t.get("projekt", ""), t.get("thema", "")))
+            t.get("projekt", ""), t.get("kontakt", ""), t.get("thema", "")))
         checked[iid] = False
         row_of[iid] = t
 
@@ -862,6 +922,14 @@ def abhaken_fenster(offene):
         vals[0] = "☑" if checked[iid] else "☐"
         tree.item(iid, values=vals)
     tree.bind("<Button-1>", klick)
+
+    def doppelklick(event):
+        iid = tree.identify_row(event.y)
+        if not iid:
+            return
+        t = row_of[iid]
+        oeffne_mail_in_outlook(t.get("entry_id", ""), t.get("store_id", ""))
+    tree.bind("<Double-Button-1>", doppelklick)
 
     erg = {"ids": set()}
     leiste = ttk.Frame(root, padding=8)
@@ -1058,7 +1126,7 @@ def _lauf(args):
         print(f"{len(mails)} Mail(s). Erstelle Briefing mit Gemini ...")
         brief = baue_briefing(mails, lade_projektnamen(cfg), cfg, key)
         ueberblick = brief.get("ueberblick", "")
-        merge_todos(store, brief.get("punkte", []), heute)
+        merge_todos(store, brief.get("punkte", []), heute, mails)
         termine = markiere_terminaenderungen(brief.get("termine", []), state)
         registriere_nachfass(state, mails, brief.get("nachfass", []))
     else:
