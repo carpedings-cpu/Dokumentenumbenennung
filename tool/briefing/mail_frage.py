@@ -43,13 +43,35 @@ _STOPP = {
 }
 
 
+# Abkuerzungen/Synonyme: wer nach dem einen fragt, findet auch das andere.
+_SYNONYM = {
+    "ibn": ["inbetriebnahme"], "inbetriebnahme": ["ibn"],
+    "lv": ["leistungsverzeichnis"], "leistungsverzeichnis": ["lv"],
+    "bzp": ["bauzeitenplan"], "bauzeitenplan": ["bzp"],
+    "va": ["verfahrensanweisung"], "verfahrensanweisung": ["va"],
+    "ag": ["auftraggeber"], "auftraggeber": ["ag"],
+    "mangel": ["maengel", "mangelanzeige"], "maengel": ["mangel"],
+    "abnahme": ["abnahmeprotokoll"], "rechnung": ["re.", "rechnungen"],
+}
+
+
 def _tokens(frage):
-    """Suchbegriffe aus der Frage ziehen (Umlaute vereinfacht, Fuellwoerter raus)."""
+    """Suchbegriff-Gruppen aus der Frage ziehen.
+
+    Jede Gruppe = Begriff + seine Abkuerzungen/Synonyme; eine Mail passt zur
+    Gruppe, wenn IRGENDEINE Variante (auch als Teilwort) vorkommt.
+    Umlaute werden vereinfacht (ae/oe/ue), Fuellwoerter fliegen raus.
+    """
     t = frage.lower()
     t = (t.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
          .replace("ß", "ss"))
-    woerter = re.findall(r"[a-z0-9][a-z0-9._-]{2,}", t)
-    return [w for w in woerter if w not in _STOPP]
+    woerter = re.findall(r"[a-z0-9][a-z0-9._-]+", t)
+    gruppen = []
+    for w in woerter:
+        if w in _STOPP:
+            continue
+        gruppen.append({w, *_SYNONYM.get(w, [])})
+    return gruppen
 
 
 def _vereinfacht(s):
@@ -60,8 +82,8 @@ def _vereinfacht(s):
 
 def suche_mails(frage, tage, status=None):
     """Durchsucht Posteingang + Gesendete nach zur Frage passenden Mails."""
-    tokens = _tokens(frage)
-    if not tokens:
+    gruppen = _tokens(frage)
+    if not gruppen:
         raise RuntimeError("Bitte einen konkreten Begriff in die Frage aufnehmen "
                            "(z. B. Projektname, Firma, Ort oder Stichwort).")
     grenze = dt.datetime.now() - dt.timedelta(days=tage)
@@ -100,13 +122,23 @@ def suche_mails(frage, tage, status=None):
                 else:
                     partner = B.smtp_adresse(item) or "(unbekannt)"
                 heuhaufen = _vereinfacht(betreff + " " + partner + " " + body)
-                punkte = sum(1 for tok in tokens if tok in heuhaufen)
+                punkte = sum(1 for g in gruppen
+                             if any(tok in heuhaufen for tok in g))
                 if punkte == 0:
                     item = items.GetNext(); continue
+                try:
+                    entry_id = item.EntryID or ""
+                except Exception:  # noqa: BLE001
+                    entry_id = ""
+                try:
+                    store_id = item.Parent.StoreID or ""
+                except Exception:  # noqa: BLE001
+                    store_id = ""
                 treffer.append({
                     "punkte": punkte, "zeit": zeit, "richtung": richtung,
                     "partner": partner, "betreff": betreff,
                     "auszug": re.sub(r"[ \t]+", " ", body).strip()[:900],
+                    "entry_id": entry_id, "store_id": store_id,
                 })
             except Exception:  # noqa: BLE001
                 pass
@@ -157,7 +189,7 @@ def gemini_antwort(api_key, frage, mails):
 
 
 def frage_beantworten(frage, tage, status=None):
-    """Kompletter Ablauf: suchen -> KI fragen -> Antwort + Quellen als Text."""
+    """Kompletter Ablauf: suchen -> KI fragen. Gibt (Antworttext, Mails) zurueck."""
     key = B.gemini_key()
     if key in ("", "AIza...") or len(key) < 20:
         raise RuntimeError("API_KEY_INVALID: kein gueltiger Schluessel in der .env "
@@ -166,17 +198,14 @@ def frage_beantworten(frage, tage, status=None):
         status("Durchsuche Outlook ...")
     mails = suche_mails(frage, tage, status=status)
     if not mails:
-        return ("Dazu habe ich in den letzten "
-                f"{tage} Tagen keine passenden E-Mails gefunden.\n\n"
-                "Tipp: Anderen Suchbegriff versuchen (Projektname, Firma, "
-                "Kommissionsnummer) oder den Zeitraum vergroessern.")
+        return (("Dazu habe ich in den letzten "
+                 f"{tage} Tagen keine passenden E-Mails gefunden.\n\n"
+                 "Tipp: Anderen Suchbegriff versuchen (Projektname, Firma, "
+                 "Kommissionsnummer) oder den Zeitraum vergroessern."), [])
     if status:
         status(f"{len(mails)} passende Mails gefunden - frage die KI ...")
     antwort = gemini_antwort(B.gemini_key(), frage, mails)
-    quellen = "\n".join(
-        f"  - {m['zeit']:%d.%m.%Y} | {m['richtung']} | {m['partner']} | {m['betreff']}"
-        for m in sorted(mails, key=lambda x: x["zeit"], reverse=True)[:12])
-    return antwort + "\n\n" + "-" * 60 + f"\nGefundene Mails ({len(mails)}):\n" + quellen
+    return antwort, sorted(mails, key=lambda x: x["zeit"], reverse=True)
 
 
 # ---------------------------------------------------------------------------
@@ -214,9 +243,26 @@ def main():
     ttk.Label(root, textvariable=status_var, padding=(10, 0)).pack(anchor="w")
 
     ausgabe = ScrolledText(root, wrap="word", font=("", 10), state="disabled")
-    ausgabe.pack(fill="both", expand=True, padx=10, pady=8)
+    ausgabe.pack(fill="both", expand=True, padx=10, pady=(8, 4))
+
+    ttk.Label(root, padding=(10, 0), font=("", 9, "bold"),
+              text="Gefundene Mails - Doppelklick öffnet die Mail in Outlook:"
+              ).pack(anchor="w")
+    quell_rahmen = ttk.Frame(root, padding=(10, 2, 10, 8))
+    quell_rahmen.pack(fill="x")
+    quellen = ttk.Treeview(quell_rahmen, columns=("datum", "richtung", "partner", "betreff"),
+                           show="headings", height=7)
+    for c, t, w in (("datum", "Datum", 90), ("richtung", "Richtung", 80),
+                    ("partner", "Von / An", 220), ("betreff", "Betreff", 400)):
+        quellen.heading(c, text=t)
+        quellen.column(c, width=w, anchor="w")
+    qsb = ttk.Scrollbar(quell_rahmen, orient="vertical", command=quellen.yview)
+    quellen.configure(yscrollcommand=qsb.set)
+    quellen.pack(side="left", fill="x", expand=True)
+    qsb.pack(side="right", fill="y")
 
     lauf = {"aktiv": False}
+    mail_von_zeile = {}
 
     def zeige(text):
         ausgabe.configure(state="normal")
@@ -224,15 +270,43 @@ def main():
         ausgabe.insert("1.0", text)
         ausgabe.configure(state="disabled")
 
+    def fuelle_quellen(mails):
+        mail_von_zeile.clear()
+        for iid in quellen.get_children():
+            quellen.delete(iid)
+        for m in mails:
+            iid = quellen.insert("", "end", values=(
+                f"{m['zeit']:%d.%m.%Y}", m["richtung"], m["partner"], m["betreff"]))
+            mail_von_zeile[iid] = m
+
+    def oeffne_quelle(event):
+        iid = quellen.identify_row(event.y)
+        m = mail_von_zeile.get(iid)
+        if not m:
+            return
+        try:
+            import pythoncom
+            pythoncom.CoInitialize()
+        except Exception:  # noqa: BLE001
+            pass
+        if not B.oeffne_mail_in_outlook(m.get("entry_id", ""), m.get("store_id", "")):
+            from tkinter import messagebox
+            messagebox.showerror(
+                "Mail nicht gefunden",
+                "Die Mail konnte nicht geöffnet werden - ist Outlook noch "
+                "geöffnet? Eventuell wurde sie verschoben oder gelöscht.")
+    quellen.bind("<Double-Button-1>", oeffne_quelle)
+
     def setze_status(text):
         root.after(0, lambda: status_var.set(text))
 
-    def fertig(text, fehler=False):
+    def fertig(text, mails=None, fehler=False):
         def _f():
             lauf["aktiv"] = False
             knopf.configure(state="normal")
             status_var.set("Fehler - siehe unten." if fehler else "Fertig.")
             zeige(text)
+            fuelle_quellen(mails or [])
         root.after(0, _f)
 
     def arbeiter(frage, tage):
@@ -242,7 +316,8 @@ def main():
         except Exception:  # noqa: BLE001
             pass
         try:
-            fertig(frage_beantworten(frage, tage, status=setze_status))
+            antwort, mails = frage_beantworten(frage, tage, status=setze_status)
+            fertig(antwort, mails)
         except Exception as e:  # noqa: BLE001
             titel, text, _ = B._erklaere_fehler(e)
             fertig(f"{titel}\n\n{text}", fehler=True)
