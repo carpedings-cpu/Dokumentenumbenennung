@@ -280,9 +280,14 @@ def main():
             mail_von_zeile[iid] = m
 
     def oeffne_quelle(event):
+        from tkinter import messagebox
         iid = quellen.identify_row(event.y)
+        if not iid:
+            return                      # Klick auf Kopfzeile/leeren Bereich
         m = mail_von_zeile.get(iid)
         if not m:
+            messagebox.showinfo("Hinweis", "Bitte zuerst eine Frage stellen - "
+                                "dann erscheinen hier anklickbare Mails.")
             return
         try:
             import pythoncom
@@ -290,11 +295,11 @@ def main():
         except Exception:  # noqa: BLE001
             pass
         if not B.oeffne_mail_in_outlook(m.get("entry_id", ""), m.get("store_id", "")):
-            from tkinter import messagebox
             messagebox.showerror(
                 "Mail nicht gefunden",
                 "Die Mail konnte nicht geöffnet werden - ist Outlook noch "
-                "geöffnet? Eventuell wurde sie verschoben oder gelöscht.")
+                "geöffnet? Eventuell wurde sie verschoben oder gelöscht.\n\n"
+                f"Technische Meldung: {B.LETZTER_OEFFNEN_FEHLER or '-'}")
     quellen.bind("<Double-Button-1>", oeffne_quelle)
 
     def setze_status(text):

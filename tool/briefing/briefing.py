@@ -202,9 +202,19 @@ def merge_todos(store, punkte, heute, mails=None):
     return neu
 
 
+LETZTER_OEFFNEN_FEHLER = ""
+
+
 def oeffne_mail_in_outlook(entry_id, store_id=""):
-    """Oeffnet die Original-Mail in Outlook (nur anzeigen, nichts aendern)."""
+    """Oeffnet die Original-Mail in Outlook (nur anzeigen, nichts aendern).
+
+    Bei Misserfolg steht der Grund in LETZTER_OEFFNEN_FEHLER, damit die
+    Fenster ihn anzeigen koennen.
+    """
+    global LETZTER_OEFFNEN_FEHLER
+    LETZTER_OEFFNEN_FEHLER = ""
     if not entry_id:
+        LETZTER_OEFFNEN_FEHLER = "keine Mail-Verknuepfung gespeichert"
         return False
     try:
         import win32com.client
@@ -217,6 +227,7 @@ def oeffne_mail_in_outlook(entry_id, store_id=""):
         item.Display()
         return True
     except Exception as e:  # noqa: BLE001
+        LETZTER_OEFFNEN_FEHLER = str(e)[:300]
         print(f"  Mail konnte nicht geoeffnet werden: {e}")
         return False
 
@@ -944,7 +955,8 @@ def abhaken_fenster(offene):
                 "Mail nicht gefunden",
                 "Die verknüpfte E-Mail konnte nicht geöffnet werden.\n\n"
                 "Mögliche Gründe: Outlook ist nicht geöffnet, oder die Mail "
-                "wurde inzwischen verschoben/gelöscht/archiviert.")
+                "wurde inzwischen verschoben/gelöscht/archiviert.\n\n"
+                f"Technische Meldung: {LETZTER_OEFFNEN_FEHLER or '-'}")
     tree.bind("<Double-Button-1>", doppelklick)
 
     erg = {"ids": set()}
