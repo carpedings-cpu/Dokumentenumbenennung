@@ -1089,6 +1089,11 @@ def waehle_zeitraum(state, cfg, jetzt):
 def _lauf(args):
     cfg = lade_config()
     key = gemini_key()
+    # Platzhalter aus der Vorlage ("AIza...") oder offensichtlich zu kurze
+    # Schluessel wie "fehlt" behandeln - sonst kommt ein verwirrender
+    # Google-Fehler 400 statt einer klaren Ansage.
+    if key and (key == "AIza..." or len(key) < 20):
+        key = ""
     if not key:
         pfad = os.path.join(HIER, ".env")
         if not os.path.exists(pfad):
@@ -1098,9 +1103,15 @@ def _lauf(args):
             except Exception:  # noqa: BLE001
                 pass
         _melde("Schluessel fehlt",
-               "Es ist noch kein Gemini-Schluessel hinterlegt.\n\n"
-               f"Bitte die Datei .env (neben dem Programm:\n{pfad})\n"
-               "oeffnen und eintragen:\n\n  GEMINI_API_KEY=AIza...\n\n"
+               "In DIESEM Ordner ist noch kein gueltiger Gemini-Schluessel "
+               "hinterlegt.\n\n"
+               f"Das Programm sucht ihn hier:\n{pfad}\n\n"
+               "Falls das Briefing frueher schon lief: Die .exe liegt "
+               "vermutlich im falschen Ordner - bitte in den gewohnten "
+               "Morgenbriefing-Ordner verschieben (dort liegt die .env mit "
+               "dem echten Schluessel) und von dort starten.\n\n"
+               "Sonst: Datei .env oeffnen und eintragen:\n"
+               "  GEMINI_API_KEY=AIza...\n"
                "Schluessel holen: https://aistudio.google.com/apikey\n"
                "Danach erneut starten.", fehler=True)
         return
@@ -1191,9 +1202,43 @@ def main():
     try:
         _lauf(args)
     except Exception as e:  # noqa: BLE001
-        _melde("Fehler", f"Das Briefing konnte nicht erstellt werden:\n\n{e}\n\n"
-               "Tipp: Ist das klassische Outlook geoeffnet und der Schluessel in der "
-               ".env korrekt?", fehler=True)
+        _melde(*_erklaere_fehler(e))
+
+
+def _erklaere_fehler(e):
+    """Uebersetzt haeufige Fehler in Klartext (Titel, Text, fehler=True)."""
+    text = str(e)
+    env_pfad = os.path.join(HIER, ".env")
+    if "API_KEY_INVALID" in text or "API key not valid" in text:
+        return ("Schluessel ungueltig",
+                "Der Gemini-Schluessel, den das Programm gefunden hat, ist "
+                "UNGUELTIG (Google lehnt ihn ab).\n\n"
+                f"Benutzt wurde die Datei:\n{env_pfad}\n\n"
+                "Haeufigste Ursache: Die .exe liegt in einem anderen Ordner "
+                "als frueher, und dort liegt eine zweite .env mit dem "
+                "Platzhalter statt dem echten Schluessel.\n"
+                "-> .exe in den gewohnten Morgenbriefing-Ordner verschieben "
+                "und von dort starten, oder in obiger Datei den echten "
+                "Schluessel (AIza..., ohne Leerzeichen) eintragen.", True)
+    if "RESOURCE_EXHAUSTED" in text or "429" in text[:40] or "Fehler 429" in text:
+        return ("Tageslimit erreicht",
+                "Der Gemini-Schluessel ist GUELTIG, aber das kostenlose "
+                "Kontingent ist im Moment aufgebraucht (Google-Limit pro "
+                "Minute/Tag).\n\nEinfach spaeter noch einmal starten - es "
+                "muss nichts geaendert werden.", True)
+    if ("Outlook" in text or "CoInitialize" in text or "Dispatch" in text
+            or "MAPI" in text):
+        return ("Outlook nicht erreichbar",
+                "Das Programm konnte Outlook nicht ansprechen.\n\n"
+                "Bitte pruefen:\n"
+                "- Ist das KLASSISCHE Desktop-Outlook geoeffnet? (Das 'neue "
+                "Outlook' aus dem Store geht nicht.)\n"
+                "- Programm normal starten, NICHT 'als Administrator'.\n\n"
+                f"Technische Meldung: {text[:300]}", True)
+    return ("Fehler",
+            f"Das Briefing konnte nicht erstellt werden:\n\n{text[:600]}\n\n"
+            "Tipp: Ist das klassische Outlook geoeffnet und der Schluessel in "
+            f"der .env korrekt?\nBenutzte .env: {env_pfad}", True)
 
 
 if __name__ == "__main__":
