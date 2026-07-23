@@ -1259,6 +1259,17 @@ def _lauf(args):
     if schon_beantwortet:
         print(f"  {schon_beantwortet} bereits beantwortete Mail(s) ausgeblendet.")
 
+    # Nur-Kopie-Mails ausblenden (jemand anderes ist zustaendig). Wer sie doch
+    # sehen will, setzt "kopie_einbeziehen": true in der Konfiguration.
+    nur_kopie = 0
+    if not cfg.get("kopie_einbeziehen", False):
+        vorher = len(mails)
+        mails = [m for m in mails if not (m.get("richtung") == "Eingang"
+                                          and m.get("rolle") == "Kopie")]
+        nur_kopie = vorher - len(mails)
+        if nur_kopie:
+            print(f"  {nur_kopie} Nur-Kopie-Mail(s) ausgeblendet.")
+
     ueberblick, termine = "", []
     if mails:
         print(f"{len(mails)} Mail(s). Erstelle Briefing mit Gemini ...")
@@ -1301,6 +1312,8 @@ def _lauf(args):
     if schon_beantwortet:
         zeitraum += (f" · {schon_beantwortet} bereits beantwortete Mail(s) "
                      "ausgeblendet")
+    if nur_kopie:
+        zeitraum += f" · {nur_kopie} Nur-Kopie-Mail(s) ausgeblendet"
     if auto_zu:
         zeitraum += f" · {auto_zu} Aufgabe(n) automatisch erledigt (beantwortet)"
     html_pfad = schreibe_html(ueberblick, offene, termine, wochentermine, zeitraum, len(mails))
