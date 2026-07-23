@@ -174,13 +174,16 @@ def merge_todos(store, punkte, heute, mails=None):
         if sid in bekannt:
             continue
         bekannt.add(sid)
-        kontakt = entry_id = store_id = ""
+        kontakt = entry_id = store_id = conv = mail_zeit = ""
         try:
             idx = int(p.get("mail", 0))
             if mails and 1 <= idx <= len(mails):
-                kontakt = mails[idx - 1].get("partner", "")
-                entry_id = mails[idx - 1].get("entry_id", "")
-                store_id = mails[idx - 1].get("store_id", "")
+                m = mails[idx - 1]
+                kontakt = m.get("partner", "")
+                entry_id = m.get("entry_id", "")
+                store_id = m.get("store_id", "")
+                conv = _conv_key(m.get("conv_id", ""), m.get("topic", ""))
+                mail_zeit = m["zeit"].isoformat()
         except Exception:  # noqa: BLE001
             pass
         store["todos"].append({
@@ -194,6 +197,8 @@ def merge_todos(store, punkte, heute, mails=None):
             "kontakt": kontakt,
             "entry_id": entry_id,
             "store_id": store_id,
+            "conv": conv,
+            "mail_zeit": mail_zeit,
             "status": "offen",
             "erstellt": heute,
             "erledigt_am": None,
@@ -542,6 +547,94 @@ def inbox_antwort_index(tage=14, cap=800):
     except Exception as e:  # noqa: BLE001
         print(f"  Antwort-Pruefung nicht moeglich: {e}")
     return idx
+
+
+def gesendet_antwort_index(tage=14, cap=800):
+    """Index der zuletzt GESENDETEN Konversationen (READ-ONLY).
+    Schluessel -> spaeteste Sendezeit; erkennt, welche Eingangs-Mails
+    bereits beantwortet wurden."""
+    idx = {}
+    try:
+        app = outlook_app()
+        gesendet = app.GetNamespace("MAPI").GetDefaultFolder(5)
+        items = gesendet.Items
+        try:
+            items.Sort("[SentOn]", True)
+        except Exception:  # noqa: BLE001
+            pass
+        cutoff = dt.datetime.now() - dt.timedelta(days=tage)
+        it = items.GetFirst()
+        n = 0
+        while it is not None and n < cap:
+            n += 1
+            try:
+                if int(getattr(it, "Class", 0)) == 43:
+                    st = py_datetime(getattr(it, "SentOn", None) or it.ReceivedTime)
+                    if st < cutoff:
+                        break
+                    try:
+                        cid = it.ConversationID or ""
+                    except Exception:  # noqa: BLE001
+                        cid = ""
+                    try:
+                        topic = it.ConversationTopic or ""
+                    except Exception:  # noqa: BLE001
+                        topic = ""
+                    for k in [x for x in ("c:" + cid if cid else "",
+                                          "t:" + _norm(topic)[:60] if topic else "") if x]:
+                        if k not in idx or st > idx[k]:
+                            idx[k] = st
+            except Exception:  # noqa: BLE001
+                pass
+            it = items.GetNext()
+    except Exception as e:  # noqa: BLE001
+        print(f"  Beantwortet-Pruefung nicht moeglich: {e}")
+    return idx
+
+
+def _sendezeit_fuer(sent_idx, conv_id, topic):
+    """Spaeteste eigene Sendezeit zu einer Konversation (oder None)."""
+    for k in ("c:" + conv_id if conv_id else "",
+              "t:" + _norm(topic)[:60] if topic else ""):
+        if k and k in sent_idx:
+            return sent_idx[k]
+    return None
+
+
+def filtere_beantwortete(mails, sent_idx):
+    """Entfernt Eingangs-Mails, auf die bereits eine Antwort gesendet wurde.
+    Gibt (verbleibende Mails, Anzahl entfernt) zurueck."""
+    rest, raus = [], 0
+    for m in mails:
+        if m.get("richtung") == "Eingang":
+            st = _sendezeit_fuer(sent_idx, m.get("conv_id", ""), m.get("topic", ""))
+            if st and st > m["zeit"]:
+                raus += 1
+                continue
+        rest.append(m)
+    return rest, raus
+
+
+def schliesse_beantwortete_todos(store, sent_idx, heute):
+    """Hakt offene Aufgaben aus Eingangs-Mails automatisch ab, sobald zu der
+    Konversation eine Antwort gesendet wurde. Gibt die Anzahl zurueck."""
+    n = 0
+    for t in store["todos"]:
+        if t.get("status") != "offen" or t.get("richtung") != "Eingang":
+            continue
+        key = t.get("conv", "")
+        if not key or key not in sent_idx:
+            continue
+        try:
+            basis = dt.datetime.fromisoformat(t.get("mail_zeit", ""))
+        except Exception:  # noqa: BLE001
+            continue
+        if sent_idx[key] > basis:
+            t["status"] = "erledigt"
+            t["erledigt_am"] = heute
+            t["auto_erledigt"] = "beantwortet"
+            n += 1
+    return n
 
 
 def registriere_nachfass(state, mails, nachfass_items):
@@ -1160,6 +1253,12 @@ def _lauf(args):
     print(f"Lese Outlook ab {marker:%d.%m.%Y %H:%M} ...")
     mails = sammle_mails(cfg, marker, args.max or cfg["max_mails"])
 
+    print("Pruefe, was schon beantwortet ist ...")
+    sent_idx = gesendet_antwort_index()
+    mails, schon_beantwortet = filtere_beantwortete(mails, sent_idx)
+    if schon_beantwortet:
+        print(f"  {schon_beantwortet} bereits beantwortete Mail(s) ausgeblendet.")
+
     ueberblick, termine = "", []
     if mails:
         print(f"{len(mails)} Mail(s). Erstelle Briefing mit Gemini ...")
@@ -1170,6 +1269,10 @@ def _lauf(args):
         registriere_nachfass(state, mails, brief.get("nachfass", []))
     else:
         ueberblick = "Keine neuen Mails seit dem letzten Lauf."
+
+    auto_zu = schliesse_beantwortete_todos(store, sent_idx, heute)
+    if auto_zu:
+        print(f"  {auto_zu} Aufgabe(n) automatisch erledigt (inzwischen beantwortet).")
 
     print("Pruefe offene Antworten (Nachfassen) ...")
     pruefe_nachfass(state, store, inbox_antwort_index(), jetzt, heute)
@@ -1195,6 +1298,11 @@ def _lauf(args):
     offene = [t for t in store["todos"] if t["status"] == "offen"]
 
     zeitraum = f"{marker:%d.%m.%Y %H:%M} - {jetzt:%d.%m.%Y %H:%M}"
+    if schon_beantwortet:
+        zeitraum += (f" · {schon_beantwortet} bereits beantwortete Mail(s) "
+                     "ausgeblendet")
+    if auto_zu:
+        zeitraum += f" · {auto_zu} Aufgabe(n) automatisch erledigt (beantwortet)"
     html_pfad = schreibe_html(ueberblick, offene, termine, wochentermine, zeitraum, len(mails))
     schreibe_log(ueberblick, offene, termine)
     print(f"Briefing: {html_pfad}")
