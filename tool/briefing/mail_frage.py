@@ -246,7 +246,7 @@ def main():
     ausgabe.pack(fill="both", expand=True, padx=10, pady=(8, 4))
 
     ttk.Label(root, padding=(10, 0), font=("", 9, "bold"),
-              text="Gefundene Mails - Doppelklick öffnet die Mail in Outlook:"
+              text="Gefundene Mails - anklicken öffnet die Mail in Outlook:"
               ).pack(anchor="w")
     quell_rahmen = ttk.Frame(root, padding=(10, 2, 10, 8))
     quell_rahmen.pack(fill="x")
@@ -300,7 +300,8 @@ def main():
                 "Die Mail konnte nicht geöffnet werden - ist Outlook noch "
                 "geöffnet? Eventuell wurde sie verschoben oder gelöscht.\n\n"
                 f"Technische Meldung: {B.LETZTER_OEFFNEN_FEHLER or '-'}")
-    quellen.bind("<Double-Button-1>", oeffne_quelle)
+    # Einfacher Klick genuegt (Wunsch): beim Loslassen der Maustaste oeffnen.
+    quellen.bind("<ButtonRelease-1>", oeffne_quelle)
 
     def setze_status(text):
         root.after(0, lambda: status_var.set(text))
