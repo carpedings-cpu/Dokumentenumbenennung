@@ -207,6 +207,41 @@ def merge_todos(store, punkte, heute, mails=None):
     return neu
 
 
+def registriere_mail_protokoll():
+    """Registriert den Link-Typ kpcmail: fuer den aktuellen Benutzer (HKCU,
+    kein Admin noetig). Briefing-Links im Browser starten dann diese .exe im
+    Oeffnen-Modus. Nur sinnvoll als gebaute .exe."""
+    if not getattr(sys, "frozen", False):
+        return False
+    try:
+        import winreg
+        exe = sys.executable
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                              r"Software\Classes\kpcmail") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "URL:KPC Mail oeffnen")
+            winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                              r"Software\Classes\kpcmail\shell\open\command") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ,
+                              f'"{exe}" --oeffne-mail "%1"')
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"  kpcmail:-Registrierung nicht moeglich: {e}")
+        return False
+
+
+def _oeffne_mail_modus(url):
+    """Wird vom Browser-Link kpcmail:<EntryID> aufgerufen: Mail zeigen, Ende."""
+    eid = (url or "").split(":", 1)[-1].strip().strip("/")
+    if eid and oeffne_mail_in_outlook(eid):
+        return
+    _melde("Mail nicht gefunden",
+           "Die verlinkte E-Mail konnte nicht geoeffnet werden.\n\n"
+           "Ist das klassische Outlook geoeffnet? Eventuell wurde die Mail "
+           "inzwischen verschoben oder geloescht.\n\n"
+           f"Technische Meldung: {LETZTER_OEFFNEN_FEHLER or '-'}", fehler=True)
+
+
 LETZTER_OEFFNEN_FEHLER = ""
 
 
@@ -822,11 +857,16 @@ def baue_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl_mails
         return html.escape(str(x or ""))
 
     def thema_zelle(t, text=None):
-        """Thema als Klick-Link zur Original-Mail (outlook:-Protokoll), falls bekannt."""
+        """Thema als Klick-Link zur Original-Mail (kpcmail:-Protokoll).
+
+        kpcmail: wird von diesem Programm selbst registriert und zeigt auf die
+        eigene .exe, die die Mail per Outlook oeffnet - funktioniert damit
+        unabhaengig davon, ob Windows 'outlook:'-Links kennt.
+        """
         txt = esc(text if text is not None else t.get("thema", ""))
         eid = t.get("entry_id", "")
         if eid:
-            return f'<a class="maillink" href="outlook:{esc(eid)}">{txt}</a>'
+            return f'<a class="maillink" href="kpcmail:{esc(eid)}">{txt}</a>'
         return txt
 
     nachfass = [t for t in offene if t.get("typ") == "nachfass"]
@@ -944,7 +984,10 @@ def baue_html(ueberblick, offene, termine, wochentermine, zeitraum, anzahl_mails
                          f"<td>{status}{alt}</td></tr>")
         teile.append("</table>")
 
-    teile.append('<footer>Aus Outlook (Eingang + Gesendet), Zusammenfassung durch '
+    teile.append('<footer>Klick auf ein Thema öffnet die Original-Mail in Outlook '
+                 '(beim allerersten Klick im Browser einmal "Immer zulassen" '
+                 'bestätigen). '
+                 'Aus Outlook (Eingang + Gesendet), Zusammenfassung durch '
                  'Gemini. Mails nur gelesen; Termine nur nach Bestaetigung im Kalender. '
                  'Erledigte Aufgaben werden gemerkt und nicht erneut gezeigt.</footer>'
                  "</body></html>")
@@ -1308,6 +1351,8 @@ def _lauf(args):
     speichere_todos(store)
     offene = [t for t in store["todos"] if t["status"] == "offen"]
 
+    registriere_mail_protokoll()   # kpcmail:-Links im Briefing aktivieren
+
     zeitraum = f"{marker:%d.%m.%Y %H:%M} - {jetzt:%d.%m.%Y %H:%M}"
     if schon_beantwortet:
         zeitraum += (f" · {schon_beantwortet} bereits beantwortete Mail(s) "
@@ -1339,6 +1384,15 @@ def _lauf(args):
 
 
 def main():
+    # Oeffnen-Modus: vom Browser-Link kpcmail:<EntryID> gestartet.
+    if "--oeffne-mail" in sys.argv:
+        try:
+            url = sys.argv[sys.argv.index("--oeffne-mail") + 1]
+        except IndexError:
+            url = ""
+        _oeffne_mail_modus(url)
+        return
+
     ap = argparse.ArgumentParser(description="KPC Morgenbriefing (Outlook, read-only).")
     ap.add_argument("--seit", default=None, help="Startdatum YYYY-MM-DD.")
     ap.add_argument("--stunden", type=int, default=0, help="Rueckblick in Stunden.")
