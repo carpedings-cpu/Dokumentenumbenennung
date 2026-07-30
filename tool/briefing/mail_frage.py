@@ -52,6 +52,7 @@ _SYNONYM = {
     "ag": ["auftraggeber"], "auftraggeber": ["ag"],
     "mangel": ["maengel", "mangelanzeige"], "maengel": ["mangel"],
     "abnahme": ["abnahmeprotokoll"], "rechnung": ["re.", "rechnungen"],
+    "ffm": ["frankfurt"], "frankfurt": ["ffm"],
 }
 
 
@@ -149,16 +150,17 @@ def suche_mails(frage, tage, status=None):
     return treffer
 
 
-def gemini_antwort(api_key, frage, mails):
-    system_text = (
-        "Du bist ein Assistent fuer einen Projektleiter im Kuechen-/Anlagenbau. "
-        "Beantworte die Frage AUSSCHLIESSLICH anhand der mitgelieferten "
-        "E-Mail-Auszuege. Antworte auf Deutsch, kurz und klar. Beginne mit dem "
-        "AKTUELLEN Stand (neueste Information), danach ggf. kurz die Vorgeschichte. "
-        "Nenne zu jeder Kernaussage Datum und Absender in Klammern, z. B. "
-        "(04.07., meier@bau.de). Wenn die Auszuege die Frage nicht beantworten, "
-        "sage das ehrlich und rate nicht."
-    )
+def gemini_antwort(api_key, frage, mails, system_text=None):
+    if system_text is None:
+        system_text = (
+            "Du bist ein Assistent fuer einen Projektleiter im Kuechen-/Anlagenbau. "
+            "Beantworte die Frage AUSSCHLIESSLICH anhand der mitgelieferten "
+            "E-Mail-Auszuege. Antworte auf Deutsch, kurz und klar. Beginne mit dem "
+            "AKTUELLEN Stand (neueste Information), danach ggf. kurz die Vorgeschichte. "
+            "Nenne zu jeder Kernaussage Datum und Absender in Klammern, z. B. "
+            "(04.07., meier@bau.de). Wenn die Auszuege die Frage nicht beantworten, "
+            "sage das ehrlich und rate nicht."
+        )
     zeilen = []
     for i, m in enumerate(mails, 1):
         zeilen.append(f"[{i}] {m['zeit']:%d.%m.%Y} | {m['richtung']} | "
@@ -188,8 +190,26 @@ def gemini_antwort(api_key, frage, mails):
         raise RuntimeError(f"Unerwartete Gemini-Antwort: {json.dumps(daten)[:300]}") from e
 
 
-def frage_beantworten(frage, tage, status=None):
-    """Kompletter Ablauf: suchen -> KI fragen. Gibt (Antworttext, Mails) zurueck."""
+_BRIEFING_SYSTEM = (
+    "Du bist ein Assistent fuer einen Projektleiter im Kuechen-/Anlagenbau. "
+    "Erstelle ein KOMPAKTES PROJEKT-BRIEFING AUSSCHLIESSLICH aus den "
+    "mitgelieferten E-Mail-Auszuegen zu dem genannten Projekt. Deutsch, knapp, "
+    "keine Floskeln. Gliederung genau so:\n\n"
+    "AKTUELLER STAND\n3-5 Saetze, das Neueste zuerst.\n\n"
+    "OFFENE PUNKTE / ZU TUN\nStichpunkte: was ist zu erledigen, wer ist dran, "
+    "je mit (Datum, Absender). Nur wirklich Offenes - Erledigtes weglassen.\n\n"
+    "WARTET AUF ANTWORT\nWer schuldet wem seit wann eine Antwort.\n\n"
+    "Wenn die Auszuege zu einem Abschnitt nichts hergeben, schreibe dort "
+    "'Nichts Offenes gefunden.' und erfinde nichts."
+)
+
+
+def frage_beantworten(frage, tage, status=None, modus="frage"):
+    """Kompletter Ablauf: suchen -> KI fragen. Gibt (Antworttext, Mails) zurueck.
+
+    modus 'frage'    -> freie Frage beantworten
+    modus 'briefing' -> strukturiertes Projekt-Briefing (Stand/To-do/Wartet)
+    """
     key = B.gemini_key()
     if key in ("", "AIza...") or len(key) < 20:
         raise RuntimeError("API_KEY_INVALID: kein gueltiger Schluessel in der .env "
@@ -204,7 +224,12 @@ def frage_beantworten(frage, tage, status=None):
                  "Kommissionsnummer) oder den Zeitraum vergroessern."), [])
     if status:
         status(f"{len(mails)} passende Mails gefunden - frage die KI ...")
-    antwort = gemini_antwort(B.gemini_key(), frage, mails)
+    if modus == "briefing":
+        antwort = gemini_antwort(B.gemini_key(),
+                                 f"Projekt-Briefing fuer: {frage}",
+                                 mails, system_text=_BRIEFING_SYSTEM)
+    else:
+        antwort = gemini_antwort(B.gemini_key(), frage, mails)
     return antwort, sorted(mails, key=lambda x: x["zeit"], reverse=True)
 
 
@@ -223,7 +248,8 @@ def main():
 
     kopf = ttk.Frame(root, padding=10)
     kopf.pack(fill="x")
-    ttk.Label(kopf, text="Frage (z. B. 'Wie ist der letzte Stand bei Projekt Goetze?'):",
+    ttk.Label(kopf, text=("Frage stellen ODER Projektname eingeben und "
+                          "'Projekt-Briefing' klicken (z. B. 'Jüdische Akademie FfM'):"),
               font=("", 10, "bold")).pack(anchor="w")
     frage_var = tk.StringVar()
     eingabe = ttk.Entry(kopf, textvariable=frage_var, font=("", 11))
@@ -239,6 +265,8 @@ def main():
     zeitraum.pack(side="left", padx=6)
     knopf = ttk.Button(zeile, text="Antwort holen")
     knopf.pack(side="left", padx=10)
+    knopf_brief = ttk.Button(zeile, text="Projekt-Briefing")
+    knopf_brief.pack(side="left")
     status_var = tk.StringVar(value="Bereit. Outlook muss geoeffnet sein.")
     ttk.Label(root, textvariable=status_var, padding=(10, 0)).pack(anchor="w")
 
@@ -310,39 +338,46 @@ def main():
         def _f():
             lauf["aktiv"] = False
             knopf.configure(state="normal")
+            knopf_brief.configure(state="normal")
             status_var.set("Fehler - siehe unten." if fehler else "Fertig.")
             zeige(text)
             fuelle_quellen(mails or [])
         root.after(0, _f)
 
-    def arbeiter(frage, tage):
+    def arbeiter(frage, tage, modus):
         try:
             import pythoncom
             pythoncom.CoInitialize()
         except Exception:  # noqa: BLE001
             pass
         try:
-            antwort, mails = frage_beantworten(frage, tage, status=setze_status)
+            antwort, mails = frage_beantworten(frage, tage, status=setze_status,
+                                               modus=modus)
             fertig(antwort, mails)
         except Exception as e:  # noqa: BLE001
             titel, text, _ = B._erklaere_fehler(e)
             fertig(f"{titel}\n\n{text}", fehler=True)
 
-    def start(*_):
+    def start(modus="frage"):
         if lauf["aktiv"]:
             return
         frage = frage_var.get().strip()
         if len(frage) < 4:
-            zeige("Bitte zuerst eine Frage eintippen.")
+            zeige("Bitte zuerst eine Frage bzw. einen Projektnamen eintippen.")
             return
         tage = int(zeitraum.get().split()[0])
         lauf["aktiv"] = True
         knopf.configure(state="disabled")
-        zeige("Einen Moment - ich durchsuche das Postfach und frage die KI ...")
-        threading.Thread(target=arbeiter, args=(frage, tage), daemon=True).start()
+        knopf_brief.configure(state="disabled")
+        zeige("Einen Moment - ich durchsuche das Postfach und "
+              + ("erstelle das Projekt-Briefing ..." if modus == "briefing"
+                 else "frage die KI ..."))
+        threading.Thread(target=arbeiter, args=(frage, tage, modus),
+                         daemon=True).start()
 
-    knopf.configure(command=start)
-    eingabe.bind("<Return>", start)
+    knopf.configure(command=lambda: start("frage"))
+    knopf_brief.configure(command=lambda: start("briefing"))
+    eingabe.bind("<Return>", lambda *_: start("frage"))
     root.mainloop()
 
 
